@@ -2677,38 +2677,24 @@
                 return tidalTrackCache.get(cacheKey);
             }
         
+            // The Go API wraps the response in an array: [trackMeta, playbackInfo, {streamUrl}]
             const response = await fetch(`${hifiApiBaseUrl}/track/?id=${id}&quality=${quality}`);
             if (!response.ok) throw new Error(`Failed to fetch track data for ID ${id}`);
             const data = await response.json();
         
-            const entries = Array.isArray(data) ? data : [data];
-            let track, info, originalTrackUrl;
-        
-            for (const entry of entries) {
-                if (!entry || typeof entry !== 'object') continue;
-                
-                if (!track && 'duration' in entry && 'id' in entry) {
-                    track = entry;
-                    continue;
-                }
-                
-                if (!info && 'manifest' in entry) {
-                    info = entry;
-                    continue;
-                }
-                
-                if (!originalTrackUrl && 'OriginalTrackUrl' in entry) {
-                    const candidate = entry.OriginalTrackUrl;
-                    if (typeof candidate === 'string') {
-                        originalTrackUrl = candidate;
-                    }
-                }
+            if (!Array.isArray(data) || data.length < 3) {
+                throw new Error('Malformed track response from API');
             }
-        
-            if (!track || !info) {
-                throw new Error('Malformed track response');
+
+            const track = data[0]; // Main metadata
+            const info = data[1]; // Playback info
+            const originalTrackUrl = data[2].OriginalTrackUrl;
+
+            // Ensure the main artist object is available
+            if (!track.artist && Array.isArray(track.artists) && track.artists.length > 0) {
+                track.artist = track.artists[0];
             }
-        
+
             const result = { track, info, originalTrackUrl };
             tidalTrackCache.set(cacheKey, result);
             if (tidalTrackCache.size > 200) { // Prune cache
@@ -6322,9 +6308,22 @@ async function openArtistView(artistId, artistName) {
         if (!response.ok) throw new Error('Failed to fetch artist albums');
         
         const data = await response.json();
-        const albums = data[2] || [];
+        const pageData = data[0]; 
+        
+        let albums = [];
+        if (pageData && pageData.rows) {
+             pageData.rows.forEach(row => {
+                if (row.modules) {
+                    row.modules.forEach(module => {
+                        if (module.pagedList && module.pagedList.items && module.pagedList.items.every(i => i.cover)) {
+                            albums = module.pagedList.items.map(item => ({...item, artists: [{name: artistName}] }));
+                        }
+                    });
+                }
+             });
+        }
 
-        if (!albums || albums.length === 0) {
+        if (albums.length === 0) {
             drawerContent.innerHTML = `<div class="no-results"><p>No albums found for this artist.</p></div>`;
             return;
         }
@@ -6334,21 +6333,16 @@ async function openArtistView(artistId, artistName) {
         const contentHtml = `<div class="item-grid">${albums.map(album => `
             <div class="item-card" data-album-id="${album.id}" data-album-name="${sanitize(album.title)}" data-album-artist-name="${sanitize(artistName)}">
                 <img src="${getHighResArtwork(album.cover, 320)}" class="item-card-art">
-                <div class="item-card-info">
-                    <div class="item-card-title">${sanitize(album.title)}</div>
-                </div>
+                <div class="item-card-info"><div class="item-card-title">${sanitize(album.title)}</div></div>
             </div>`).join('')}</div>`;
         
-        const drawerSubtitleEl = document.getElementById('drawer-subtitle');
-        drawerSubtitleEl.innerHTML = `
+        document.getElementById('drawer-subtitle').innerHTML = `
             <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
                 <span>${albums.length} albums found</span>
                 <button class="action-btn" id="save-artist-btn" style="padding: 8px 12px; height: auto;">
-                    <span class="material-symbols-rounded" style="font-size: 16px;">arrow_circle_down</span>
-                    Own All
+                    <span class="material-symbols-rounded" style="font-size: 16px;">arrow_circle_down</span> Own All
                 </button>
-            </div>
-        `;
+            </div>`;
 
         drawerContent.innerHTML = contentHtml;
         document.getElementById('save-artist-btn').addEventListener('click', () => saveArtistContent(currentDrawerContext, artistName));
@@ -6705,40 +6699,25 @@ async function saveAlbumContent(tracks, albumName, silent = false) {
     }
 }
         
-async function processAndCacheAudio(songObject, trackInfo, originalTrackUrl) {
+async function processAndCacheAudio(songObject, streamUrl) {
     try {
-        let streamUrl;
-        if (originalTrackUrl) {
-            streamUrl = originalTrackUrl;
-        } else {
-            const decodedManifest = atob(trackInfo.manifest);
-            try {
-                const parsed = JSON.parse(decodedManifest);
-                if (parsed?.urls?.[0]) {
-                    streamUrl = parsed.urls[0];
-                } else { throw new Error('No URL in JSON manifest'); }
-            } catch {
-                const match = decodedManifest.match(/https?:\/\/[\w\-.~:?#[@!$&'()*+,;=%/]+/);
-                if (match) {
-                    streamUrl = match[0];
-                } else {
-                    throw new Error('Could not resolve stream URL from manifest');
-                }
-            }
+        if (!streamUrl) {
+            throw new Error("No stream URL provided for caching.");
         }
-
         const audioResponse = await fetch(streamUrl);
         if (!audioResponse.ok) throw new Error('Could not download audio file for caching.');
         const audioBlob = await audioResponse.blob();
 
+        // Fetch lyrics while caching audio
         const lrcDataResult = await fetchLyrics(songObject);
         const lrcData = lrcDataResult && lrcDataResult.type === 'lrc' ? parseLRC(lrcDataResult.content) : null;
         
         const cacheEntry = {
             id: songObject.id, blob: audioBlob, timestamp: Date.now(), size: audioBlob.size,
             metadata: {
-                ...songObject,
-                lyrics: lrcDataResult ? lrcDataResult.content : null, lrcData: lrcData,
+                ...songObject, // The songObject already has full metadata
+                lyrics: lrcDataResult ? lrcDataResult.content : null, 
+                lrcData: lrcData,
             }
         };
 
@@ -6780,20 +6759,20 @@ async function updatetidalCacheWithLyrics(song) {
 
 async function playtidalTrack(trackId, playContext = null) {
     const numericTrackId = Number(trackId);
-    let songObject;
     try {
-        setPlayerLoadingState(true, null);
-
+        // 1. Get all track data from our Go backend
         const { track, info, originalTrackUrl } = await getTidalTrack(numericTrackId);
 
+        // 2. Check for local version
         if (track.isrc && isrcToLocalSongMap.has(track.isrc)) {
             const localSong = isrcToLocalSongMap.get(track.isrc);
             console.log(`Found local version for "${track.title}". Playing from library.`);
-            await playSong(localSong, null);
+            await playSong(localSong, playContext);
             return;
         }
 
-        songObject = {
+        // 3. Build the rich song object from the full metadata
+        const songObject = {
             id: track.id,
             name: track.title,
             artist: track.artist.name,
@@ -6809,46 +6788,35 @@ async function playtidalTrack(trackId, playContext = null) {
             copyright: track.copyright,
             explicit: track.explicit,
             vibrantColor: track.album.vibrantColor,
-            replayGain: track.replayGain,
-            peak: track.peak,
+            replayGain: info.trackReplayGain,
+            peak: info.trackPeakAmplitude,
             bpm: track.bpm,
-            version: track.version
+            version: track.version,
+            streamUrl: originalTrackUrl
         };
         
-        currentlyPlayingSong = songObject;
-        currentSongId = songObject.id;
-        setPlayerLoadingState(true, songObject);
-
+        // 4. Check cache to decide what to play
         const tx = db.transaction('tidalCache', 'readonly');
         const cachedEntry = await promiseIDBRequest(tx.objectStore('tidalCache').get(numericTrackId));
         
+        let songToPlay;
         if (cachedEntry) {
             console.log("Playing from cache.");
-            const songToPlay = cachedEntry.metadata;
+            songToPlay = cachedEntry.metadata;
             songToPlay.blobUrl = URL.createObjectURL(cachedEntry.blob);
-            await playSong(songToPlay, playContext);
-            fetchAndUpdateLyrics(songToPlay);
-            return;
-        }
-        
-        console.log("Track not cached. Processing audio before playback.");
-        const cachedSong = await processAndCacheAudio(songObject, info, originalTrackUrl);
-        if (cachedSong) {
-            const songToPlay = cachedSong.metadata;
-            songToPlay.blobUrl = URL.createObjectURL(cachedSong.blob);
-            await playSong(songToPlay, playContext);
-            // Lyrics are already fetched by processAndCacheAudio, just render them
-            if (isPanelVisible && panelContent === 'lyrics') renderLyrics();
+            if (!songToPlay.lyrics) fetchAndUpdateLyrics(songToPlay);
         } else {
-            throw new Error("Caching and processing failed.");
+            console.log("Track not cached. Playing from stream and caching in background.");
+            songToPlay = songObject;
+            processAndCacheAudio(songObject, originalTrackUrl);
         }
+
+        await playSong(songToPlay, playContext);
+
     } catch (error) {
         console.error(`Failed to play Hi-Fi track ${numericTrackId}:`, error);
         Gurasuraisu.showPopup("Cannot play selected item");
-        isPlayerLoading = false;
         playNextSong({ userInitiated: false });
-    } finally {
-        setPlayerLoadingState(false, songObject);
     }
 }
         
@@ -7026,30 +6994,30 @@ async function removeFolder(folderName) {
             return null;
         }
 
-        async function fetchLyricsFromHifi(song) {
-            if (!song || !song.id) return null;
-            try {
-                const url = `${hifiApiBaseUrl}/lyrics/?id=${song.id}`;
-                const response = await fetch(url);
-                if (!response.ok) {
-                    console.warn(`Hifi Lyrics request failed with status: ${response.status}`);
-                    return null;
-                }
-                const data = await response.json();
-                if (!data || data.length === 0 || (!data[0].lyrics && !data[0].subtitles)) {
-                    return null;
-                }
-                const lyricsData = data[0];
-                if (lyricsData.subtitles) {
-                    return { type: 'lrc', content: lyricsData.subtitles };
-                } else if (lyricsData.lyrics) {
-                    return { type: 'plain', content: lyricsData.lyrics };
-                }
-            } catch (error) {
-                console.error("Error fetching lyrics from Hifi API:", error);
-            }
+async function fetchLyricsFromHifi(song) {
+    if (!song || !song.id) return null;
+    try {
+        const url = `${hifiApiBaseUrl}/lyrics/?id=${song.id}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            console.warn(`Hifi Lyrics request failed with status: ${response.status}`);
             return null;
         }
+        const data = await response.json();
+        // The Go API wraps the response in an array
+        if (!data || !Array.isArray(data) || data.length === 0) return null;
+
+        const lyricsData = data[0];
+        if (lyricsData.subtitles) {
+            return { type: 'lrc', content: lyricsData.subtitles };
+        } else if (lyricsData.lyrics) {
+            return { type: 'plain', content: lyricsData.lyrics };
+        }
+    } catch (error) {
+        console.error("Error fetching lyrics from Hifi API:", error);
+    }
+    return null;
+}
         
 function addQueueItemEventListeners() {
     document.querySelectorAll('.queue-item').forEach(item => {
