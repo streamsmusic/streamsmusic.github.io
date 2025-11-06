@@ -6606,15 +6606,14 @@ async function processAndCacheAudio(songObject) {
 
         // --- Stage 1: Attempt to fetch using the /dash endpoint ---
         for (const quality of qualityLevelsToTry) {
-            if (concatenatedBlob) break; // Exit if we've already found a stream
+            if (concatenatedBlob) break;
             const manifestUrl = `${hifiApiBaseUrl}/dash/?id=${songObject.id}&quality=${quality}`;
             try {
                 const response = await fetch(manifestUrl);
-                if (!response.ok) continue; // Try next quality if request fails
+                if (!response.ok) continue;
 
                 const text = await response.text();
                 
-                // Case 1.1: Response is an XML manifest
                 if (text && text.trim().startsWith('<?xml')) {
                     console.log(`Found XML manifest via /dash for quality: ${quality}`);
                     const parser = new DOMParser();
@@ -6639,7 +6638,6 @@ async function processAndCacheAudio(songObject) {
                     );
                     concatenatedBlob = new Blob([initSegmentBlob, ...mediaSegmentBlobs], { type: 'audio/mp4' });
                 } else {
-                    // Case 1.2: Response might be JSON with direct URLs
                     try {
                         const directUrlData = JSON.parse(text);
                         if (directUrlData && directUrlData.urls && directUrlData.urls.length > 0) {
@@ -6662,17 +6660,30 @@ async function processAndCacheAudio(songObject) {
         if (!concatenatedBlob) {
             console.log(`All /dash attempts failed. Trying /track endpoint...`);
             for (const quality of qualityLevelsToTry) {
-                if (concatenatedBlob) break; // Exit if we found one
+                if (concatenatedBlob) break;
                 const trackUrl = `${hifiApiBaseUrl}/track/?id=${songObject.id}&quality=${quality}`;
                 try {
                     const response = await fetch(trackUrl);
                     if (response.ok) {
-                        const data = await response.json();
-                        if (data.urls && data.urls[0]) {
-                            console.log(`Found direct URL via /track for quality: ${quality}`);
-                            const audioResponse = await fetch(data.urls[0]);
-                            if (audioResponse.ok) {
-                                concatenatedBlob = await audioResponse.blob();
+                        const dataArray = await response.json();
+                        
+                        const trackMetadata = dataArray.find(item => item.album && item.artist);
+                        if (trackMetadata) {
+                            songObject.replayGain = trackMetadata.replayGain;
+                            songObject.peak = trackMetadata.peak;
+                            songObject.bpm = trackMetadata.bpm;
+                        }
+
+                        const manifestObject = dataArray.find(item => item.manifest);
+                        if (manifestObject && manifestObject.manifest) {
+                            const decodedManifest = JSON.parse(atob(manifestObject.manifest));
+                            if (decodedManifest.urls && decodedManifest.urls[0]) {
+                                const audioUrl = decodedManifest.urls[0];
+                                console.log(`Found direct URL via /track manifest for quality: ${quality}`);
+                                const audioResponse = await fetch(audioUrl);
+                                if (audioResponse.ok) {
+                                    concatenatedBlob = await audioResponse.blob();
+                                }
                             }
                         }
                     }
