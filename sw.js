@@ -2,7 +2,29 @@ const CACHE_NAME = 'streams-cache-v1.0';
 
 const ASSETS_TO_CACHE = [
   '/streams/index.html',
-  '/streams/favicon.png'
+  '/streams/favicon.png',
+  'https://ohio.monochrome.tf',
+  'https://virginia.monochrome.tf',
+  'https://oregon.monochrome.tf',
+  'https://california.monochrome.tf',
+  'https://frankfurt.monochrome.tf',
+  'https://london.monochrome.tf',
+  'https://singapore.monochrome.tf',
+  'https://jakarta.monochrome.tf',
+  'https://triton.squid.wtf',
+  'https://aether.squid.wtf',
+  'https://zeus.squid.wtf',
+  'https://kraken.squid.wtf',
+  'https://phoenix.squid.wtf',
+  'https://shiva.squid.wtf',
+  'https://chaos.squid.wtf',
+  'https://wolf.qqdl.site',
+  'https://maus.qqdl.site',
+  'https://vogel.qqdl.site',
+  'https://katze.qqdl.site',
+  'https://hund.qqdl.site',
+  'https://hifi.401658.xyz',
+  'https://tidal.kinoplus.online'
 ];
 
 // INSTALL: Cache all assets. This now uses a single, simpler call.
