@@ -4304,7 +4304,6 @@ function initVisualizer() {
         eqTreble.type = 'highshelf'; eqTreble.frequency.value = 3000;
         
         // 3. Connect the entire audio graph in order
-        gainNode.connect(eqBass);
         eqBass.connect(eqMid);
         eqMid.connect(eqTreble);
         eqTreble.connect(analyser);
