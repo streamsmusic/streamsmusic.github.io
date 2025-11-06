@@ -6604,61 +6604,88 @@ async function processAndCacheAudio(songObject) {
 
         let concatenatedBlob = null;
 
+        // --- Stage 1: Attempt to fetch using the /dash endpoint ---
         for (const quality of qualityLevelsToTry) {
+            if (concatenatedBlob) break; // Exit if we've already found a stream
             const manifestUrl = `${hifiApiBaseUrl}/dash/?id=${songObject.id}&quality=${quality}`;
             try {
                 const response = await fetch(manifestUrl);
-                if (response.ok) {
-                    const text = await response.text();
-                    if (text && text.trim().startsWith('<?xml')) {
-                        console.log(`Found XML manifest for track ${songObject.id} at quality: ${quality}`);
-                        const parser = new DOMParser();
-                        const xmlDoc = parser.parseFromString(text, "application/xml");
-                        const representation = xmlDoc.querySelector("Representation");
-                        const segmentTemplate = representation.querySelector("SegmentTemplate");
-                        const initUrl = segmentTemplate.getAttribute("initialization");
-                        const mediaUrlTemplate = segmentTemplate.getAttribute("media");
-                        const segmentTimeline = segmentTemplate.querySelector("SegmentTimeline");
-                        const sElements = segmentTimeline.querySelectorAll("S");
-                        const segments = [];
-                        sElements.forEach(s => {
-                            const r = parseInt(s.getAttribute("r") || "0");
-                            for (let i = 0; i <= r; i++) segments.push(1);
-                        });
-                        const segmentUrls = [];
-                        for (let i = 0; i < segments.length; i++) {
-                            segmentUrls.push(mediaUrlTemplate.replace('$Number$', i + 1));
-                        }
-                        const [initSegmentBlob, ...mediaSegmentBlobs] = await Promise.all(
-                            [initUrl, ...segmentUrls].map(url => fetch(url).then(res => res.blob()))
-                        );
-                        concatenatedBlob = new Blob([initSegmentBlob, ...mediaSegmentBlobs], { type: 'audio/mp4' });
-                        break;
-                    } else {
-                        try {
-                            const directUrlData = JSON.parse(text);
-                            if (directUrlData && directUrlData.urls && directUrlData.urls.length > 0) {
-                                console.log(`Found direct URL for track ${songObject.id} at quality: ${quality}`);
-                                const audioResponse = await fetch(directUrlData.urls[0]);
-                                if (audioResponse.ok) {
-                                    concatenatedBlob = await audioResponse.blob();
-                                    break;
-                                }
+                if (!response.ok) continue; // Try next quality if request fails
+
+                const text = await response.text();
+                
+                // Case 1.1: Response is an XML manifest
+                if (text && text.trim().startsWith('<?xml')) {
+                    console.log(`Found XML manifest via /dash for quality: ${quality}`);
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(text, "application/xml");
+                    const representation = xmlDoc.querySelector("Representation");
+                    const segmentTemplate = representation.querySelector("SegmentTemplate");
+                    const initUrl = segmentTemplate.getAttribute("initialization");
+                    const mediaUrlTemplate = segmentTemplate.getAttribute("media");
+                    const segmentTimeline = segmentTemplate.querySelector("SegmentTimeline");
+                    const sElements = segmentTimeline.querySelectorAll("S");
+                    const segments = [];
+                    sElements.forEach(s => {
+                        const r = parseInt(s.getAttribute("r") || "0");
+                        for (let i = 0; i <= r; i++) segments.push(1);
+                    });
+                    const segmentUrls = [];
+                    for (let i = 0; i < segments.length; i++) {
+                        segmentUrls.push(mediaUrlTemplate.replace('$Number$', i + 1));
+                    }
+                    const [initSegmentBlob, ...mediaSegmentBlobs] = await Promise.all(
+                        [initUrl, ...segmentUrls].map(url => fetch(url).then(res => res.blob()))
+                    );
+                    concatenatedBlob = new Blob([initSegmentBlob, ...mediaSegmentBlobs], { type: 'audio/mp4' });
+                } else {
+                    // Case 1.2: Response might be JSON with direct URLs
+                    try {
+                        const directUrlData = JSON.parse(text);
+                        if (directUrlData && directUrlData.urls && directUrlData.urls.length > 0) {
+                            console.log(`Found direct URL via /dash for quality: ${quality}`);
+                            const audioResponse = await fetch(directUrlData.urls[0]);
+                            if (audioResponse.ok) {
+                                concatenatedBlob = await audioResponse.blob();
                             }
-                        } catch (e) {
-                           console.warn(`Received non-XML/JSON response for quality ${quality}.`);
                         }
+                    } catch (e) {
+                       console.warn(`/dash response for quality ${quality} was not valid XML or JSON.`);
                     }
                 }
             } catch (e) {
-                console.warn(`Request failed for quality ${quality}:`, e);
+                console.warn(`Request to /dash with quality ${quality} failed:`, e);
             }
         }
 
+        // --- Stage 2: If /dash failed, attempt to fetch using /track endpoint ---
         if (!concatenatedBlob) {
-            throw new Error('Failed to fetch a valid manifest or direct URL for any quality level.');
+            console.log(`All /dash attempts failed. Trying /track endpoint...`);
+            for (const quality of qualityLevelsToTry) {
+                if (concatenatedBlob) break; // Exit if we found one
+                const trackUrl = `${hifiApiBaseUrl}/track/?id=${songObject.id}&quality=${quality}`;
+                try {
+                    const response = await fetch(trackUrl);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.urls && data.urls[0]) {
+                            console.log(`Found direct URL via /track for quality: ${quality}`);
+                            const audioResponse = await fetch(data.urls[0]);
+                            if (audioResponse.ok) {
+                                concatenatedBlob = await audioResponse.blob();
+                            }
+                        }
+                    }
+                } catch(e) {
+                    console.warn(`Request to /track with quality ${quality} failed:`, e);
+                }
+            }
         }
         
+        if (!concatenatedBlob) {
+            throw new Error('Failed to fetch a valid stream from both /dash and /track endpoints.');
+        }
+
         const cacheEntry = {
             id: songObject.id, blob: concatenatedBlob, timestamp: Date.now(), size: concatenatedBlob.size,
             metadata: {
