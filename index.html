@@ -6708,10 +6708,24 @@ async function playtidalTrack(trackId, playContext = null) {
     const numericTrackId = Number(trackId);
     let songObject;
     try {
+        // FIX: Check cache first, this is now the primary source of truth.
+        const tx = db.transaction('tidalCache', 'readonly');
+        const cachedEntry = await promiseIDBRequest(tx.objectStore('tidalCache').get(numericTrackId));
+        
+        if (cachedEntry) {
+            console.log("Playing from cache.");
+            const songToPlay = cachedEntry.metadata;
+            songToPlay.blobUrl = URL.createObjectURL(cachedEntry.blob);
+            await playSong(songToPlay, playContext);
+            fetchAndUpdateLyrics(songToPlay);
+            return; // Exit here since we handled the cached song completely
+        }
+        
+        // If not in cache, proceed with the original online logic
         const trackData = lasttidalSearchResults.find(t => t.id === numericTrackId) ||
                           currentDrawerContext.find(t => t.id === numericTrackId);
 
-        if (!trackData) throw new Error("Track not found in search results");
+        if (!trackData) throw new Error("Track not found in search results or cache");
 
         if (trackData.isrc && isrcToLocalSongMap.has(trackData.isrc)) {
             const localSong = isrcToLocalSongMap.get(trackData.isrc);
@@ -6725,6 +6739,7 @@ async function playtidalTrack(trackId, playContext = null) {
             album: trackData.album.title, albumArt: getHighResArtwork(trackData.album.cover),
             storage: 'tidal', duration: trackData.duration, audioQuality: trackData.audioQuality,
             trackNumber: trackData.trackNumber, volumeNumber: trackData.volumeNumber,
+            replayGain: 0.0,
             isrc: trackData.isrc, copyright: trackData.copyright, vibrantColor: trackData.album.vibrantColor
         };
         
@@ -6732,23 +6747,11 @@ async function playtidalTrack(trackId, playContext = null) {
         currentSongId = songObject.id;
         setPlayerLoadingState(true, songObject);
 
-        const tx = db.transaction('tidalCache', 'readonly');
-        const cachedEntry = await promiseIDBRequest(tx.objectStore('tidalCache').get(numericTrackId));
-        
-        if (cachedEntry) {
-            console.log("Playing from cache.");
-            const songToPlay = cachedEntry.metadata;
-            songToPlay.blobUrl = URL.createObjectURL(cachedEntry.blob);
-            await playSong(songToPlay, playContext);
-            fetchAndUpdateLyrics(songToPlay);
-            return;
-        }
-        
         console.log("Track not cached. Processing audio before playback.");
-        const cachedSong = await processAndCacheAudio(songObject);
-        if (cachedSong) {
-            const songToPlay = cachedSong.metadata;
-            songToPlay.blobUrl = URL.createObjectURL(cachedSong.blob);
+        const newCachedSong = await processAndCacheAudio(songObject);
+        if (newCachedSong) {
+            const songToPlay = newCachedSong.metadata;
+            songToPlay.blobUrl = URL.createObjectURL(newCachedSong.blob);
             await playSong(songToPlay, playContext);
             fetchAndUpdateLyrics(songToPlay);
         } else {
