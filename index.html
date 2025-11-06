@@ -3405,7 +3405,6 @@ async function extractMetadata(file) {
                         lyrics: lyricsText,
                         lrcData: lrcData,
                         genre: genre,
-                        replayGain: replayGain,
                         bpm: bpm
                     });
                 },
@@ -3423,7 +3422,6 @@ async function extractMetadata(file) {
                         lyrics: null,
                         lrcData: null,
                         genre: null,
-                        replayGain: 0.0,
                         bpm: null
                     });
                 }
@@ -3608,7 +3606,6 @@ async function saveSongs() {
                 handleName: song.handleName, dateAdded: song.dateAdded,
                 genre: song.genre,
                 playCount: song.playCount || 0,
-                replayGain: song.replayGain,
                 bpm: song.bpm
             };
             store.add(songToStore);
@@ -4295,7 +4292,6 @@ function initVisualizer() {
     try {
         // 1. Create the context and all nodes first
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        gainNode = audioContext.createGain();
         eqBass = audioContext.createBiquadFilter();
         eqMid = audioContext.createBiquadFilter();
         eqTreble = audioContext.createBiquadFilter();
@@ -4308,7 +4304,6 @@ function initVisualizer() {
         eqTreble.type = 'highshelf'; eqTreble.frequency.value = 3000;
         
         // 3. Connect the entire audio graph in order
-        source.connect(gainNode);
         gainNode.connect(eqBass);
         eqBass.connect(eqMid);
         eqMid.connect(eqTreble);
@@ -5693,10 +5688,6 @@ async function playSong(song, playContext = null) {
             hls = null;
         }
         
-        if (gainNode) {
-            const linearGain = (song.replayGain && song.replayGain !== 0.0) ? Math.pow(10, song.replayGain / 20) : 1.0;
-            gainNode.gain.setValueAtTime(linearGain, audioContext.currentTime);
-        }
         setupBpm(song);
         
         if (audioPlayer.src && audioPlayer.src.startsWith('blob:')) {
@@ -6507,7 +6498,6 @@ async function savetidalTrackToLibrary() {
             discNumber: songToSave.volumeNumber,
             lyrics: songToSave.lyrics, lrcData: songToSave.lrcData, playCount: 0,
             vibrantColor: songToSave.vibrantColor,
-            replayGain: songToSave.replayGain,
             peak: songToSave.peak,
             bpm: songToSave.bpm,
             isrc: songToSave.isrc,
@@ -6564,7 +6554,6 @@ async function batchSaveTidalTracks(tracks) {
                 lyrics: fetchedLyrics ? fetchedLyrics.content : null,
                 lrcData: (fetchedLyrics && fetchedLyrics.type === 'lrc') 
                     ? parseLRC(fetchedLyrics.content) : null,
-                replayGain: track.replayGain,
                 peak: track.peak,
                 bpm: track.bpm,
                 playCount: 0,
@@ -6707,7 +6696,6 @@ async function processAndCacheAudio(songObject) {
                     
                     const trackMetadata = dataArray.find(item => item.album && item.artist);
                     if (trackMetadata) {
-                        songObject.replayGain = trackMetadata.replayGain;
                         songObject.peak = trackMetadata.peak;
                         songObject.bpm = trackMetadata.bpm;
                     }
@@ -6865,9 +6853,7 @@ async function playtidalTrack(trackId, playContext = null) {
             album: trackData.album.title, albumArt: getHighResArtwork(trackData.album.cover),
             storage: 'tidal', duration: trackData.duration, audioQuality: trackData.audioQuality,
             trackNumber: trackData.trackNumber, volumeNumber: trackData.volumeNumber,
-            replayGain: 0.0,
             isrc: trackData.isrc, copyright: trackData.copyright, vibrantColor: trackData.album.vibrantColor,
-            replayGain: trackData.replayGain,
             peak: trackData.peak,
             bpm: trackData.bpm
         };
@@ -6897,14 +6883,14 @@ async function playtidalTrack(trackId, playContext = null) {
 }
         
 function connectAudioGraph() {
-    if (source && gainNode) { // Simplified check
+    if (source && audioContext && eqBass) {
         try {
-            source.disconnect();
+            source.disconnect(); // Disconnect everything first to ensure a clean state
         } catch(e) { /* Fails if not connected, which is fine */ }
-        // Reconnect the source to the start of the audio chain
-        source.connect(gainNode);
+        // Reconnect the full chain: source -> EQ -> analyser -> output
+        source.connect(eqBass);
         document.getElementById('visualizerCanvas').style.visibility = 'visible';
-        console.log("Audio graph re-connected for visualizer and EQ.");
+        console.log("Audio graph connected for visualizer and EQ.");
     }
 }
 
