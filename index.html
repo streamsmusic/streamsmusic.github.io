@@ -6226,47 +6226,90 @@ async function processAndCachetidalTrack(songObject) {
 
 async function openArtistView(artistId, artistName) {
     currentDrawerContext = [];
-    openDrawer(artistName, "Loading albums...", `<div class="loading-message"><svg width="24" height="24" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="color: var(--text-color);"><style>.spinner_V8m1{transform-origin:center;animation:spinner_zKoa 2s linear infinite}.spinner_V8m1 circle{stroke-linecap:round;animation:spinner_YpZS 1.5s ease-in-out infinite}@keyframes spinner_zKoa{100%{transform:rotate(360deg)}}@keyframes spinner_YpZS{0%{stroke-dasharray:0 150;stroke-dashoffset:0}47.5%{stroke-dasharray:42 150;stroke-dashoffset:-16}95%,100%{stroke-dasharray:42 150;stroke-dashoffset:-59}}</style><g class="spinner_V8m1"><circle cx="12" cy="12" r="9.5" fill="none" stroke-width="3"></circle></g></svg></div>`);
+    openDrawer(artistName, "Loading content...", `<div class="loading-message"><svg width="24" height="24" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="color: var(--text-color);"><style>.spinner_V8m1{transform-origin:center;animation:spinner_zKoa 2s linear infinite}.spinner_V8m1 circle{stroke-linecap:round;animation:spinner_YpZS 1.5s ease-in-out infinite}@keyframes spinner_zKoa{100%{transform:rotate(360deg)}}@keyframes spinner_YpZS{0%{stroke-dasharray:0 150;stroke-dashoffset:0}47.5%{stroke-dasharray:42 150;stroke-dashoffset:-16}95%,100%{stroke-dasharray:42 150;stroke-dashoffset:-59}}</style><g class="spinner_V8m1"><circle cx="12" cy="12" r="9.5" fill="none" stroke-width="3"></circle></g></svg></div>`);
 
     try {
         const response = await fetch(`${hifiApiBaseUrl}/artist/?f=${artistId}`);
-        if (!response.ok) throw new Error('Failed to fetch artist albums');
+        if (!response.ok) throw new Error('Failed to fetch artist content');
         
         const data = await response.json();
-        const albums = data[2] || [];
 
-        if (!albums || albums.length === 0) {
-            drawerContent.innerHTML = `<div class="no-results"><p>No albums found for this artist.</p></div>`;
+        // Extract top tracks from the second element of the response array
+        const topTracks = data[1] || [];
+        
+        // Extract albums from the new, deeply nested structure
+        let albums = [];
+        if (data[0] && data[0].rows && data[0].rows[0] && data[0].rows[0].modules && data[0].rows[0].modules[0] && data[0].rows[0].modules[0].pagedList) {
+            albums = data[0].rows[0].modules[0].pagedList.items || [];
+        }
+
+        if (topTracks.length === 0 && albums.length === 0) {
+            drawerContent.innerHTML = `<div class="no-results"><p>No content found for this artist.</p></div>`;
             return;
         }
         
+        // The context for the "Own All" button should be the list of albums
         currentDrawerContext = albums;
 
-        const contentHtml = `<div class="item-grid">${albums.map(album => `
-            <div class="item-card" data-album-id="${album.id}" data-album-name="${sanitize(album.title)}" data-album-artist-name="${sanitize(artistName)}">
-                <img src="${getHighResArtwork(album.cover, 320)}" class="item-card-art">
-                <div class="item-card-info">
-                    <div class="item-card-title">${sanitize(album.title)}</div>
-                </div>
-            </div>`).join('')}</div>`;
+        let contentHtml = '';
+
+        // Generate HTML for the top tracks list
+        if (topTracks.length > 0) {
+            contentHtml += `
+                <h3 class="section-title" style="font-size: 1.2rem; margin-bottom: 10px;">Top Tracks</h3>
+                <div class="item-list" style="margin-bottom: 20px;">${topTracks.slice(0, 10).map(track => `
+                    <div class="music-item" data-track-id="${track.id}" style="cursor: pointer;">
+                        <div class="song-info">
+                            <img src="${getHighResArtwork(track.album.cover, 80)}" class="album-thumbnail" style="width: 40px; height: 40px; border-radius: 6px; margin-right: 10px;">
+                            <div>
+                                <div class="song-title">${sanitize(track.title)}</div>
+                                <div class="album-artist" style="font-size: 0.8em;">${sanitize(track.album.title)}</div>
+                            </div>
+                        </div>
+                    </div>`).join('')}
+                </div>`;
+        }
+
+        // Generate HTML for the albums grid
+        if (albums.length > 0) {
+            contentHtml += `
+                <h3 class="section-title" style="font-size: 1.2rem; margin-bottom: 10px;">Albums</h3>
+                <div class="item-grid">${albums.map(album => `
+                    <div class="item-card" data-album-id="${album.id}" data-album-name="${sanitize(album.title)}" data-album-artist-name="${sanitize(artistName)}">
+                        <img src="${getHighResArtwork(album.cover, 320)}" class="item-card-art">
+                        <div class="item-card-info">
+                            <div class="item-card-title">${sanitize(album.title)}</div>
+                        </div>
+                    </div>`).join('')}
+                </div>`;
+        }
         
+        // Update the drawer's subtitle and include the "Own All" button
         const drawerSubtitleEl = document.getElementById('drawer-subtitle');
-        drawerSubtitleEl.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
-                <span>${albums.length} albums found</span>
-                <button class="action-btn" id="save-artist-btn" style="padding: 8px 12px; height: auto;">
-                    <span class="material-symbols-rounded" style="font-size: 16px;">arrow_circle_down</span>
-                    Own All
-                </button>
-            </div>
-        `;
+        if(albums.length > 0) {
+            drawerSubtitleEl.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: center; gap: 15px;">
+                    <span>${albums.length} albums</span>
+                    <button class="action-btn" id="save-artist-btn" style="padding: 8px 12px; height: auto;">
+                        <span class="material-symbols-rounded" style="font-size: 16px;">arrow_circle_down</span>
+                        Own All
+                    </button>
+                </div>
+            `;
+        } else {
+             drawerSubtitleEl.textContent = `${topTracks.length} top tracks`;
+        }
+        
 
         drawerContent.innerHTML = contentHtml;
-        document.getElementById('save-artist-btn').addEventListener('click', () => saveArtistContent(currentDrawerContext, artistName));
+        
+        if (document.getElementById('save-artist-btn')) {
+            document.getElementById('save-artist-btn').addEventListener('click', () => saveArtistContent(currentDrawerContext, artistName));
+        }
 
     } catch (error) {
-        console.error("Error fetching artist albums:", error);
-        drawerContent.innerHTML = `<div class="no-results"><p>Could not load albums.</p></div>`;
+        console.error("Error fetching artist content:", error);
+        drawerContent.innerHTML = `<div class="no-results"><p>Could not load artist content.</p></div>`;
     }
 }
         
