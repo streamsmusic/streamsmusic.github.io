@@ -2571,6 +2571,8 @@
         let crossfadeEnabled = false;
         let sleepTimerId = null;
         let eqBass, eqMid, eqTreble; // Add these for the EQ
+        let beatDetector, tempoEstimator;
+        let songBPM = 0, lastBpmAlignedBeatTime = 0;
         let playlists = [];
         let playlistModal, sleepTimerModal;
         let currentSortMode = 'dateAdded'; // 'dateAdded', 'alpha'
@@ -3388,6 +3390,8 @@ async function extractMetadata(file) {
 
                     const genreTag = tag.tags.TCON || tag.tags.genre;
                     const genre = genreTag ? (genreTag.data || genreTag) : null;
+                    const bpmTag = tag.tags.TBPM || tag.tags.bpm;
+                    const bpm = bpmTag ? (bpmTag.data || bpmTag) : null;
 
                     resolve({
                         title: tag.tags.title || file.name.replace(/\.[^/.]+$/, ""),
@@ -3400,7 +3404,9 @@ async function extractMetadata(file) {
                         discNumber: discNumber,
                         lyrics: lyricsText,
                         lrcData: lrcData,
-                        genre: genre
+                        genre: genre,
+                        replayGain: replayGain,
+                        bpm: bpm
                     });
                 },
                 onError: (error) => {
@@ -3416,7 +3422,9 @@ async function extractMetadata(file) {
                         discNumber: null,
                         lyrics: null,
                         lrcData: null,
-                        genre: null
+                        genre: null,
+                        replayGain: 0.0,
+                        bpm: null
                     });
                 }
             });
@@ -3599,7 +3607,9 @@ async function saveSongs() {
                 lyrics: song.lyrics, lrcData: song.lrcData, storage: song.storage,
                 handleName: song.handleName, dateAdded: song.dateAdded,
                 genre: song.genre,
-                playCount: song.playCount || 0
+                playCount: song.playCount || 0,
+                replayGain: song.replayGain,
+                bpm: song.bpm
             };
             store.add(songToStore);
         });
@@ -4202,30 +4212,16 @@ async function updateAllBackgrounds(imageUrl) {
 }
 
 class BeatDetector {
-    constructor(frequencyBands, historySize = 60, minThreshold = 5) {
+    constructor(frequencyBands, historySize = 40, minThreshold = 8) {
         this.frequencyBands = frequencyBands;
         this.historySize = historySize;
         this.minFluxThreshold = minThreshold;
         this.fluxHistories = this.frequencyBands.map(() => []);
         this.lastEnergies = new Array(this.frequencyBands.length).fill(0);
-        this.beatValue = 0.0;
-        this.decayRate = 0.96;
-        this.dynamicSensitivity = 1.4;
-        this.minSensitivity = 1.2;
-        this.maxSensitivity = 2.4;
-        this.increaseFactor = 1.05;
-        this.decreaseFactor = 0.999;
-    }
-
-    _calculateStandardDeviation(array, mean) {
-        if (array.length < 2) return 0;
-        const variance = array.reduce((acc, val) => acc + (val - mean) ** 2, 0) / array.length;
-        return Math.sqrt(variance);
     }
 
     update(dataArray) {
-        let beatDetectedThisFrame = false;
-
+        let isBeat = false;
         for (let i = 0; i < this.frequencyBands.length; i++) {
             const band = this.frequencyBands[i];
             const history = this.fluxHistories[i];
@@ -4244,27 +4240,47 @@ class BeatDetector {
             
             const averageFlux = history.reduce((a, b) => a + b, 0) / history.length;
             const stdDev = this._calculateStandardDeviation(history, averageFlux);
-            const dynamicThreshold = averageFlux + (this.dynamicSensitivity * stdDev);
+            const dynamicThreshold = averageFlux + (1.5 * stdDev);
 
             if (flux > dynamicThreshold && flux > this.minFluxThreshold) {
-                beatDetectedThisFrame = true;
+                isBeat = true;
             }
-
             history.push(flux);
             history.shift();
         }
-
-        if (beatDetectedThisFrame) {
-            this.beatValue = 1.0;
-            this.dynamicSensitivity *= this.increaseFactor;
-        } else {
-            this.beatValue *= this.decayRate;
-            this.dynamicSensitivity *= this.decreaseFactor;
-        }
-        
-        this.dynamicSensitivity = Math.max(this.minSensitivity, Math.min(this.maxSensitivity, this.dynamicSensitivity));
-        return this.beatValue;
+        return isBeat;
     }
+
+    _calculateStandardDeviation(array, mean) {
+        if (array.length < 2) return 0;
+        const variance = array.reduce((acc, val) => acc + (val - mean) ** 2, 0) / array.length;
+        return Math.sqrt(variance);
+    }
+}
+
+class TempoEstimator {
+    constructor() { this.reset(); }
+    reset() {
+        this.beatTimestamps = [];
+        this.estimatedBPM = 120;
+    }
+    logBeat(timestamp) {
+        this.beatTimestamps.push(timestamp);
+        if (this.beatTimestamps.length > 30) this.beatTimestamps.shift();
+        if (this.beatTimestamps.length < 10) return;
+
+        const intervals = [];
+        for (let i = 1; i < this.beatTimestamps.length; i++) {
+            intervals.push(this.beatTimestamps[i] - this.beatTimestamps[i-1]);
+        }
+        intervals.sort((a, b) => a - b);
+        const medianInterval = intervals[Math.floor(intervals.length / 2)];
+        if (medianInterval > 0.2 && medianInterval < 2.0) {
+            const currentBpm = 60 / medianInterval;
+            this.estimatedBPM = this.estimatedBPM * 0.9 + currentBpm * 0.1;
+        }
+    }
+    getBPM() { return this.estimatedBPM; }
 }
 
 function initVisualizer() {
@@ -4290,7 +4306,8 @@ function initVisualizer() {
         
         source = audioContext.createMediaElementSource(audioPlayer);
 
-        source.connect(eqBass);
+        source.connect(gainNode);
+        gainNode.connect(eqBass);
         eqBass.connect(eqMid);
         eqMid.connect(eqTreble);
         eqTreble.connect(analyser);
@@ -4309,12 +4326,9 @@ function initVisualizer() {
         const displacementFilter = document.getElementById('displacement');
         const turbulenceFilter = document.getElementById('turbulence');
 
-        const baselineDistortion = 80;
-        const peakDistortion = 250;
-
-        let beatDetector;
         if (!isMobile) {
-            beatDetector = new BeatDetector([[0, 10], [20, 50], [80, 120]]);
+            beatDetector = new BeatDetector([[0, 10], [10, 20], [40, 80], [100, 200]]);
+            tempoEstimator = new TempoEstimator();
         }
         
         const canvas = document.getElementById('visualizerCanvas');
@@ -4334,17 +4348,25 @@ function initVisualizer() {
         visualizerDraw = () => {
             visualizerFrameId = requestAnimationFrame(visualizerDraw);
             analyser.getByteFrequencyData(dataArray);
+            
+            if (!isMobile && beatDetector) {
+                const isSpectralBeat = beatDetector.update(dataArray);
+                const currentTime = audioPlayer.currentTime;
+                let effectiveBPM = songBPM;
 
-            if (!isMobile) {
-                const beatPulseTarget = beatDetector.update(dataArray);
-                
-                // --- Beat Detection Integration ---
-                // If the beat detector returns a strong pulse, trigger our canvas effect.
-                if(beatPulseTarget > 0.9) { // 0.9 is a good threshold for a clear beat
-                    triggerBeatEffect();
+                if (!effectiveBPM && tempoEstimator) {
+                    if (isSpectralBeat) tempoEstimator.logBeat(currentTime);
+                    effectiveBPM = tempoEstimator.getBPM();
                 }
 
-                smoothedPulse += (beatPulseTarget - smoothedPulse) * smoothingFactor;
+                if (effectiveBPM > 0) {
+                    const beatInterval = 60 / effectiveBPM;
+                    const tolerance = beatInterval * 0.2; 
+                    if (isSpectralBeat && currentTime > lastBpmAlignedBeatTime + beatInterval - tolerance) {
+                        triggerBeatEffect();
+                        lastBpmAlignedBeatTime = currentTime;
+                    }
+                }
             }
             
             if (canvas.width !== canvas.clientWidth) canvas.width = canvas.clientWidth;
@@ -5037,6 +5059,12 @@ async function renderLyrics() {
     lyricsContainer.innerHTML = `<p style="opacity: 1; filter: none;">No lyrics found.</p>`;
 }
 
+function setupBpm(song) {
+    songBPM = song.bpm || null;
+    lastBpmAlignedBeatTime = 0;
+    if (tempoEstimator) tempoEstimator.reset();
+}
+
 async function fetchLyricsFromLrclib(song) {
     if (!song) return null;
 
@@ -5661,6 +5689,13 @@ async function playSong(song, playContext = null) {
             hls.destroy();
             hls = null;
         }
+        
+        if (gainNode) {
+            const linearGain = (song.replayGain && song.replayGain !== 0.0) ? Math.pow(10, song.replayGain / 20) : 1.0;
+            gainNode.gain.setValueAtTime(linearGain, audioContext.currentTime);
+        }
+        setupBpm(song);
+        
         if (audioPlayer.src && audioPlayer.src.startsWith('blob:')) {
             URL.revokeObjectURL(audioPlayer.src);
         }
@@ -6036,7 +6071,7 @@ function toggletidalTab() {
                 const existingIds = new Set(lasttidalSearchResults.map(item => item.id));
                 const newUniqueItems = newItems.filter(item => !existingIds.has(item.id));
 
-                lasttidalSearchResults = lasttidalSearchResults.concat(newItems);
+                lasttidalSearchResults = lasttidalSearchResults.concat(newUniqueItems);
                 rendertidalSearchResults(totalItems);
 
             } catch (error) {
@@ -6469,6 +6504,9 @@ async function savetidalTrackToLibrary() {
             discNumber: songToSave.volumeNumber,
             lyrics: songToSave.lyrics, lrcData: songToSave.lrcData, playCount: 0,
             vibrantColor: songToSave.vibrantColor,
+            replayGain: songToSave.replayGain,
+            peak: songToSave.peak,
+            bpm: songToSave.bpm,
             isrc: songToSave.isrc,
             copyright: songToSave.copyright
         };
@@ -6523,6 +6561,9 @@ async function batchSaveTidalTracks(tracks) {
                 lyrics: fetchedLyrics ? fetchedLyrics.content : null,
                 lrcData: (fetchedLyrics && fetchedLyrics.type === 'lrc') 
                     ? parseLRC(fetchedLyrics.content) : null,
+                replayGain: track.replayGain,
+                peak: track.peak,
+                bpm: track.bpm,
                 playCount: 0,
                 vibrantColor: track.vibrantColor,
                 isrc: track.isrc,
@@ -6822,7 +6863,10 @@ async function playtidalTrack(trackId, playContext = null) {
             storage: 'tidal', duration: trackData.duration, audioQuality: trackData.audioQuality,
             trackNumber: trackData.trackNumber, volumeNumber: trackData.volumeNumber,
             replayGain: 0.0,
-            isrc: trackData.isrc, copyright: trackData.copyright, vibrantColor: trackData.album.vibrantColor
+            isrc: trackData.isrc, copyright: trackData.copyright, vibrantColor: trackData.album.vibrantColor,
+            replayGain: trackData.replayGain,
+            peak: trackData.peak,
+            bpm: trackData.bpm
         };
         
         currentlyPlayingSong = songObject;
@@ -6850,7 +6894,7 @@ async function playtidalTrack(trackId, playContext = null) {
 }
         
 function connectAudioGraph() {
-    if (source && audioContext && eqBass) {
+    if (source && audioContext && gainNode) {
         try {
             source.disconnect(); // Disconnect everything first to ensure a clean state
         } catch(e) { /* Fails if not connected, which is fine */ }
