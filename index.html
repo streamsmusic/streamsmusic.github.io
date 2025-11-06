@@ -2531,6 +2531,8 @@
         let animationFrameId;
         let backgroundRotation = 0;
         let currentBeatIntensity = 0; // The smoothly animated intensity used for rendering
+        let currentContrast = 1.0;
+        let targetContrast = 1.0;
         let noise; // This will hold our noise generator function
         let beatIntensity = 0;
         let isTransitioning = false;
@@ -4109,6 +4111,13 @@ const availableMusicFunctions = {
                 beatIntensity = 0; // Clamp to zero to prevent tiny residual values
             }
 
+            // --- Contrast Animation Logic ---
+            // Smoothly move current contrast towards the target (fast attack, approx. 0.2s)
+            currentContrast += (targetContrast - currentContrast) * 0.1; 
+            // Decay the target contrast back to baseline (slower decay, approx. 0.3s)
+            targetContrast += (1.0 - targetContrast) * 0.05; 
+            if (targetContrast < 1.01) targetContrast = 1.0; // Clamp to baseline
+
             // --- Background Rotation and Drawing (Unchanged) ---
             backgroundRotation += 0.002;
             if (isTransitioning) {
@@ -4128,6 +4137,11 @@ const availableMusicFunctions = {
                 );
                 ctx.restore();
             };
+            
+            // Save context state and apply the dynamic filter before drawing
+            ctx.save();
+            ctx.filter = `contrast(${currentContrast})`;
+        
             if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
                 ctx.globalAlpha = 1 - transitionProgress;
                 drawRotatingBackground(oldResizedArt);
@@ -4165,10 +4179,8 @@ const availableMusicFunctions = {
                 ctx.globalAlpha = 1;
             });
 
-            // 3. If a beat was active, restore the canvas from the global distortion.
-            if (beatIntensity > 0.001) {
-                ctx.restore();
-            }
+            // Restore context to remove the filter for the next frame
+            ctx.restore();
         }
         
         /**
@@ -4177,6 +4189,7 @@ const availableMusicFunctions = {
          */
         function triggerBeatEffect() {
             beatIntensity = 1;
+            targetContrast = 1.5; // Increase contrast by 50% on beat
         }
         
 async function createResizedImageURL(imageUrl, width, height) {
