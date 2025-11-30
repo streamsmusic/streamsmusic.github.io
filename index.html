@@ -8447,7 +8447,7 @@ async function loadSongsAndPlaylists() {
                     ui.push({ type: 'list', items });
                 }
                 else if (this.currentView === 'tidal_search') {
-                    ui.push({ type: 'input', id: 'tidal_input', placeholder: 'Search Ditidalover', value: this.lastSearchQuery });
+                    ui.push({ type: 'input', id: 'tidal_input', placeholder: 'Search Discover', value: this.lastSearchQuery });
                     ui.push({ type: 'row', components: [{ type: 'button', id: 'tidal_go', label: 'Search', icon: 'search', style: 'filled' }] });
                     if (lasttidalSearchResults.length > 0) {
                         const items = lasttidalSearchResults.slice(0, 20).map(t => ({ id: `play_tidal_${t.id}`, title: t.title, subtitle: t.user.username, image: t.artwork_url }));
