@@ -5500,8 +5500,16 @@ function openSongContextMenu(targetElement, songId) {
 
 async function imageUrlToBase64(url) {
     if (!url || url.startsWith('data:')) return url;
+    
+    let urlToFetch = url;
+    // Check if it's a TIDAL URL that can be resized
+    if (url.includes('resources.tidal.com/images/')) {
+        // Replace the size part of the URL (e.g., /1280x1280.jpg or /640x640.jpg) with /320x320.jpg
+        urlToFetch = url.replace(/\/\d+x\d+\.jpg$/, '/320x320.jpg');
+    }
+
     try {
-        const response = await fetch(url);
+        const response = await fetch(urlToFetch);
         const blob = await response.blob();
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -7226,9 +7234,14 @@ async function updateMediaSessionMetadata(song) {
     const oldBlobUrl = currentMediaSessionArtBlobUrl;
     let newBlobUrl = null;
 
-    if (song.albumArt && song.albumArt.startsWith('data:')) {
+    if (song.albumArt) {
         try {
-            const response = await fetch(song.albumArt);
+            let urlToFetch = song.albumArt;
+            // If it's a resizable TIDAL URL, get a smaller version to avoid CORS issues
+            if (urlToFetch.includes('resources.tidal.com/images/')) {
+                urlToFetch = urlToFetch.replace(/\/\d+x\d+\.jpg$/, '/320x320.jpg');
+            }
+            const response = await fetch(urlToFetch);
             const blob = await response.blob();
             newBlobUrl = URL.createObjectURL(blob);
         } catch (e) {
