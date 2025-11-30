@@ -8362,6 +8362,8 @@ async function loadSongsAndPlaylists() {
                 if (typeof Gurasuraisu === 'undefined') return;
                 this.render();
                 Gurasuraisu.onRemoteAction((id, value) => this.handleAction(id, value));
+                // Handle re-launch requests from remote
+                Gurasuraisu.onRequestRemoteUI(() => this.render());
             },
 
             // Send only partial updates for frequently changing data
