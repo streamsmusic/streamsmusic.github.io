@@ -8450,7 +8450,7 @@ async function loadSongsAndPlaylists() {
                     ui.push({ type: 'input', id: 'tidal_input', placeholder: 'Search Discover', value: this.lastSearchQuery });
                     ui.push({ type: 'row', components: [{ type: 'button', id: 'tidal_go', label: 'Search', icon: 'search', style: 'filled' }] });
                     if (lasttidalSearchResults.length > 0) {
-                        const items = lasttidalSearchResults.slice(0, 20).map(t => ({ id: `play_tidal_${t.id}`, title: t.title, subtitle: t.user.username, image: t.artwork_url }));
+                        const items = lasttidalSearchResults.slice(0, 20).map(t => ({ id: `play_tidal_${t.id}`, title: t.title, subtitle: t.artist.name, image: getHighResArtwork(t.album.cover) }));
                         ui.push({ type: 'list', items });
                     }
                 }
@@ -8508,8 +8508,8 @@ async function loadSongsAndPlaylists() {
                     const track = lasttidalSearchResults.find(t => t.id == id.replace('play_tidal_', ''));
                     if (track) {
                         const ctx = lasttidalSearchResults.map(t => ({
-                            id: t.id, name: t.title, artist: t.user.username, album: 'tidal',
-                            albumArt: getHighResArtwork(t.artwork_url), storage: 'tidal'
+                            id: t.id, name: t.title, artist: t.artist.name, album: t.album.title || 'TIDAL',
+                            albumArt: getHighResArtwork(t.album.cover), storage: 'tidal'
                         }));
                         playtidalTrack(track.id, ctx);
                         this.currentView = 'nowPlaying';
