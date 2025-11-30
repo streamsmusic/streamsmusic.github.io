@@ -8351,6 +8351,196 @@ async function loadSongsAndPlaylists() {
             next: () => nextBtn.click(),
             prev: () => prevBtn.click()
         });
+
+
+        // --- Waves Remote Interface ---
+        const RemoteInterface = {
+            currentView: 'nowPlaying',
+            lastSearchQuery: '',
+
+            init: function() {
+                if (typeof Gurasuraisu === 'undefined') return;
+                this.render();
+                Gurasuraisu.onRemoteAction((id, value) => this.handleAction(id, value));
+            },
+
+            // Send only partial updates for frequently changing data
+            updateProgress: function() {
+                // Only send updates if we are in the Now Playing view to save bandwidth
+                if (this.currentView !== 'nowPlaying') return;
+
+                const duration = audioPlayer.duration || 1;
+                Gurasuraisu.sendRemoteUpdate({
+                    'cmd_seek': (audioPlayer.currentTime / duration) * 100,
+                    'lbl_time_current': formatTime(audioPlayer.currentTime),
+                    'lbl_time_total': formatTime(duration)
+                });
+            },
+
+            render: function() {
+                let ui = [];
+                
+                // Navigation Row
+                ui.push({
+                    type: 'row',
+                    components: [
+                        { type: 'button', id: 'nav_np', icon: 'play_circle', style: this.currentView === 'nowPlaying' ? 'filled' : 'tonal' },
+                        { type: 'button', id: 'nav_queue', icon: 'queue_music', style: this.currentView === 'queue' ? 'filled' : 'tonal' },
+                        { type: 'button', id: 'nav_lib', icon: 'backpack', style: this.currentView.startsWith('library') ? 'filled' : 'tonal' },
+                        { type: 'button', id: 'nav_tidal', icon: 'explore', style: this.currentView.startsWith('tidal') ? 'filled' : 'tonal' }
+                    ]
+                });
+
+                if (this.currentView === 'nowPlaying') {
+                    const song = currentlyPlayingSong || { name: 'No Song Playing', artist: 'Select music to start', albumArt: '' };
+                    
+                    // Album Art
+                    ui.push({ type: 'image', id: 'np_art', src: song.albumArt, width: '250px', height: '250px', style: 'rounded' });
+
+                    ui.push({ type: 'text', id: 'np_title', content: song.name, size: 'large' });
+                    ui.push({ type: 'text', id: 'np_artist', content: song.artist, size: 'medium' });
+                    
+                    ui.push({ type: 'row', components: [
+                        { type: 'button', id: 'cmd_prev', icon: 'skip_previous', style: 'tonal' },
+                        { type: 'button', id: 'cmd_play', icon: audioPlayer.paused ? 'play_arrow' : 'pause', style: 'filled' },
+                        { type: 'button', id: 'cmd_next', icon: 'skip_next', style: 'tonal' }
+                    ]});
+                    
+                    ui.push({ type: 'row', components: [
+                        { type: 'button', id: 'cmd_shuffle', icon: 'shuffle', style: isShuffleEnabled ? 'filled' : 'outlined' },
+                        { type: 'button', id: 'cmd_repeat', icon: repeatMode === 'one' ? 'repeat_one' : 'repeat', style: repeatMode !== 'none' ? 'filled' : 'outlined' }
+                    ]});
+                    
+                    // Progress Bar
+                    ui.push({ type: 'slider', id: 'cmd_seek', value: (audioPlayer.currentTime / (audioPlayer.duration || 1)) * 100, min: 0, max: 100, icon: 'timer' });
+                    
+                    // Time Labels
+                    ui.push({ type: 'row', components: [
+                        { type: 'text', id: 'lbl_time_current', content: formatTime(audioPlayer.currentTime) },
+                        { type: 'text', id: 'lbl_time_total', content: formatTime(audioPlayer.duration || 0) }
+                    ]});
+                } 
+                else if (this.currentView === 'queue') {
+                    const items = playQueue.map((s, i) => ({ id: `q_${i}`, title: s.name, subtitle: s.artist, image: s.albumArt }));
+                    ui.push({ type: 'list', items });
+                } 
+                else if (this.currentView === 'library') {
+                    ui.push({ type: 'list', items: [
+                        { id: 'view_albums', title: 'Albums', subtitle: 'Browse your library by album', image: '' },
+                        { id: 'view_artists', title: 'Artists', subtitle: 'Browse your library by artist', image: '' },
+                        { id: 'view_songs', title: 'All Songs', subtitle: 'View all tracks', image: '' }
+                    ]});
+                }
+                else if (this.currentView === 'library_albums') {
+                    const albums = groupSongsByAlbum(songs).slice(0, 50);
+                    const items = albums.map(a => ({ id: `play_alb_${a.originalAlbumArtist}::${a.originalAlbum}`, title: a.name, subtitle: a.artist, image: a.albumArt }));
+                    ui.push({ type: 'list', items });
+                }
+                else if (this.currentView === 'library_artists') {
+                    const artistsMap = new Map();
+                    songs.forEach(s => { if (!artistsMap.has(s.artist)) artistsMap.set(s.artist, s.albumArt); });
+                    const items = Array.from(artistsMap).slice(0, 50).map(([artist, art]) => ({ id: `filter_artist_${artist}`, title: artist, subtitle: 'Artist', image: art }));
+                    ui.push({ type: 'list', items });
+                }
+                else if (this.currentView === 'library_songs') {
+                    const items = songs.slice(0, 50).map(s => ({ id: `play_song_${s.id}`, title: s.name, subtitle: s.artist, image: s.albumArt }));
+                    ui.push({ type: 'list', items });
+                }
+                else if (this.currentView === 'tidal_search') {
+                    ui.push({ type: 'input', id: 'tidal_input', placeholder: 'Search Ditidalover', value: this.lastSearchQuery });
+                    ui.push({ type: 'row', components: [{ type: 'button', id: 'tidal_go', label: 'Search', icon: 'search', style: 'filled' }] });
+                    if (lasttidalSearchResults.length > 0) {
+                        const items = lasttidalSearchResults.slice(0, 20).map(t => ({ id: `play_tidal_${t.id}`, title: t.title, subtitle: t.user.username, image: t.artwork_url }));
+                        ui.push({ type: 'list', items });
+                    }
+                }
+
+                Gurasuraisu.setRemoteUI(ui);
+            },
+
+            handleAction: function(id, value) {
+                if (id.startsWith('nav_')) {
+                    this.currentView = id.replace('nav_', '');
+                    // Fix for Now Playing navigation mapping
+                    if (this.currentView === 'np') this.currentView = 'nowPlaying';
+                    if (this.currentView === 'lib') this.currentView = 'library';
+                    if (this.currentView === 'tidal') this.currentView = 'tidal_search';
+                }
+                else if (id === 'cmd_play') playPauseBtn.click();
+                else if (id === 'cmd_next') nextBtn.click();
+                else if (id === 'cmd_prev') prevBtn.click();
+                else if (id === 'cmd_shuffle') toggleShuffle();
+                else if (id === 'cmd_repeat') toggleRepeat();
+                else if (id === 'cmd_seek') { if (audioPlayer.duration) audioPlayer.currentTime = (value / 100) * audioPlayer.duration; }
+                else if (id.startsWith('q_')) playSong(playQueue[parseInt(id.split('_')[1])], null);
+                
+                // Library Browsing Handlers
+                else if (id === 'view_albums') this.currentView = 'library_albums';
+                else if (id === 'view_artists') this.currentView = 'library_artists';
+                else if (id === 'view_songs') this.currentView = 'library_songs';
+                
+                else if (id.startsWith('play_alb_')) {
+                    const [artist, album] = id.replace('play_alb_', '').split('::');
+                    const ctx = songs.filter(s => s.albumArtist === artist && s.album === album);
+                    if (ctx.length) playSong(ctx[0], ctx);
+                    this.currentView = 'nowPlaying';
+                }
+                else if (id.startsWith('filter_artist_')) {
+                    const artist = id.replace('filter_artist_', '');
+                    const ctx = songs.filter(s => s.artist === artist);
+                    if (ctx.length) playSong(ctx[0], ctx);
+                    this.currentView = 'nowPlaying';
+                }
+                else if (id.startsWith('play_song_')) {
+                    const songId = parseFloat(id.replace('play_song_', ''));
+                    const song = songs.find(s => s.id === songId);
+                    if (song) playSong(song, songs); // Play with full library context
+                    this.currentView = 'nowPlaying';
+                }
+
+                // Tidal Handlers
+                else if (id === 'tidal_input') this.lastSearchQuery = value;
+                else if (id === 'tidal_go') {
+                    document.getElementById('tidalSearchInput').value = this.lastSearchQuery;
+                    searchtidal().then(() => this.render());
+                }
+                else if (id.startsWith('play_tidal_')) {
+                    const track = lasttidalSearchResults.find(t => t.id == id.replace('play_tidal_', ''));
+                    if (track) {
+                        const ctx = lasttidalSearchResults.map(t => ({
+                            id: t.id, name: t.title, artist: t.user.username, album: 'tidal',
+                            albumArt: getHighResArtwork(t.artwork_url), storage: 'tidal'
+                        }));
+                        playtidalTrack(track.id, ctx);
+                        this.currentView = 'nowPlaying';
+                    }
+                }
+                this.render();
+            },
+            
+            onTrackChange: function() {
+                if (this.currentView === 'queue' || this.currentView === 'nowPlaying') {
+                    this.currentView = 'nowPlaying';
+                    this.render();
+                }
+            }
+        };
+
+        // Hook into main app events
+        const originalPlaySong = playSong;
+        playSong = async function(song, context) {
+            await originalPlaySong(song, context);
+            RemoteInterface.onTrackChange();
+        };
+
+        audioPlayer.addEventListener('timeupdate', () => {
+            RemoteInterface.updateProgress();
+        });
+
+        // Initialize
+        window.addEventListener('load', () => {
+            setTimeout(() => RemoteInterface.init(), 1000);
+        });
     </script>
 </body>
 </html>
