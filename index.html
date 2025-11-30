@@ -8419,9 +8419,9 @@ async function loadSongsAndPlaylists() {
                     ui.push({ type: 'text', id: 'np_artist', content: song.artist, size: 'medium' });
                     
                     ui.push({ type: 'row', components: [
-                        { type: 'button', id: 'cmd_prev', icon: 'skip_previous', style: 'tonal' },
+                        { type: 'button', id: 'cmd_prev', icon: 'fast_rewind', style: 'tonal' },
                         { type: 'button', id: 'cmd_play', icon: audioPlayer.paused ? 'play_arrow' : 'pause', style: 'filled' },
-                        { type: 'button', id: 'cmd_next', icon: 'skip_next', style: 'tonal' }
+                        { type: 'button', id: 'cmd_next', icon: 'fast_forward', style: 'tonal' }
                     ]});
                     
                     ui.push({ type: 'row', components: [
