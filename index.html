@@ -8390,7 +8390,7 @@ async function loadSongsAndPlaylists() {
                     components: [
                         { type: 'button', id: 'nav_np', icon: 'play_circle', style: this.currentView === 'nowPlaying' ? 'filled' : 'tonal' },
                         { type: 'button', id: 'nav_queue', icon: 'queue_music', style: this.currentView === 'queue' ? 'filled' : 'tonal' },
-                        { type: 'button', id: 'nav_lib', icon: 'backpack', style: this.currentView.startsWith('library') ? 'filled' : 'tonal' },
+                        { type: 'button', id: 'nav_lib', icon: 'backpack', style: (this.currentView.startsWith('library') && this.currentView !== 'library_search') ? 'filled' : 'tonal' },
                         { type: 'button', id: 'nav_tidal', icon: 'explore', style: this.currentView.startsWith('tidal') ? 'filled' : 'tonal' },
                         { type: 'button', id: 'nav_search', icon: 'search', style: this.currentView === 'library_search' ? 'filled' : 'tonal' }
                     ]
