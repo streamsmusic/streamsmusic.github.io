@@ -2839,7 +2839,7 @@ function resetPlayer() {
     currentSongId = null;
     currentlyPlayingSong = null; // Clear the currently playing song object
     updateMiniplayerUI(null);
-    document.querySelector('.library-controls').style.bottom = '25px !important'; 
+    document.querySelectorAll('.library-controls').forEach(el => el.style.bottom = '25px');
     playQueue = [];
     currentQueueIndex = -1;
 
@@ -5689,14 +5689,14 @@ function updateMiniplayerUI(song, state) {
 
     if (!song || !currentSongId) {
         miniplayer.classList.add('hidden');
-        document.querySelector('.library-controls').style.bottom = '25px !important'; 
+        document.querySelectorAll('.library-controls').forEach(el => el.style.bottom = '25px');
         return;
     }
 
     miniplayer.classList.remove('hidden');
     miniplayerArt.src = song.albumArt;
     miniplayerTitle.textContent = sanitize(song.name);
-    document.querySelector('.library-controls').style.bottom = ''; 
+    document.querySelectorAll('.library-controls').forEach(el => el.style.bottom = ''); 
     miniplayerArtist.textContent = sanitize(song.artist);
 
     let iconHtml;
