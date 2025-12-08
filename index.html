@@ -6557,7 +6557,7 @@ async function openAlbumView(albumId, albumName, artistName) {
         const albumArt = getHighResArtwork(tracks[0].album.cover);
         
         const contentHtml = `
-            <div class="album-header-list" style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+            <div class="album-header-list" style="margin-bottom: 15px; display: flex; align-items: center; justify-content: center; flex-direction: column;">
                 <div style="display: flex; align-items: center; gap: 15px;">
                     <img src="${albumArt}" style="width: 100px; height: 100px; border-radius: 12px; corner-shape: superellipse(1.5); box-shadow: 0 0 0 1px var(--glass-border);">
                 </div>
@@ -6599,7 +6599,7 @@ function openLocalAlbumView(artistName, albumName) {
 
     // Build the content HTML
     const contentHtml = `
-        <div class="album-header-list" style="margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between;">
+        <div class="album-header-list" style="margin-bottom: 15px; display: flex; align-items: center; justify-content: center; flex-direction: column;">
             <div style="display: flex; align-items: center; gap: 15px;">
                 <img src="${albumArt}" style="width: 250px; height: 250px; border-radius: 12px; corner-shape: superellipse(1.5); box-shadow: 0 0 0 1px var(--glass-border);">
             </div>
