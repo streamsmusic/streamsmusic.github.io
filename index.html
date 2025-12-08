@@ -6074,14 +6074,14 @@ async function openArtistView(artistId, artistName) {
         if (!response.ok) throw new Error('Failed to fetch artist content');
         
         const data = await response.json();
-
-        // Extract top tracks from the second element of the response array
-        const topTracks = data[1] || [];
+    
+        // Extract top tracks from the 'tracks' property
+        const topTracks = data.tracks || [];
         
         // Extract albums from the new, deeply nested structure
         let albums = [];
-        if (data[0] && data[0].rows && data[0].rows[0] && data[0].rows[0].modules && data[0].rows[0].modules[0] && data[0].rows[0].modules[0].pagedList) {
-            albums = data[0].rows[0].modules[0].pagedList.items || [];
+        if (data.albums && data.albums.rows && data.albums.rows.length > 0 && data.albums.rows[0].modules && data.albums.rows[0].modules.length > 0 && data.albums.rows[0].modules[0].pagedList) {
+            albums = data.albums.rows[0].modules[0].pagedList.items || [];
         }
 
         if (topTracks.length === 0 && albums.length === 0) {
@@ -6162,9 +6162,9 @@ async function openAlbumView(albumId, albumName, artistName) {
         const response = await fetch(`${hifiApiBaseUrl}/album/?id=${albumId}`);
         if (!response.ok) throw new Error('Failed to fetch album tracks');
         
-        // This API returns a 2-element array: [album_metadata, { items: [tracks] }]
-        const data = await response.json();
-        const tracks = data[1].items.map(t => t.item);
+        const responseData = await response.json();
+        const data = responseData.data || {};
+        const tracks = (data.items || []).map(t => t.item);
 
         if (!tracks || tracks.length === 0) {
             drawerContent.innerHTML = `<div class="no-results"><p>No tracks found for this album.</p></div>`;
@@ -6500,17 +6500,14 @@ async function processAndCacheAudio(songObject) {
             try {
                 const response = await fetch(trackUrl);
                 if (response.ok) {
-                    const dataArray = await response.json();
-                    
-                    const trackMetadata = dataArray.find(item => item.album && item.artist);
-                    if (trackMetadata) {
-                        songObject.peak = trackMetadata.peak;
-                        songObject.bpm = trackMetadata.bpm;
-                    }
-
-                    const manifestObject = dataArray.find(item => item.manifest);
-                    if (manifestObject && manifestObject.manifest) {
-                        const decodedManifest = JSON.parse(atob(manifestObject.manifest));
+                    const responseData = await response.json();
+                    const data = responseData.data || {};
+        
+                    if (data.peak) songObject.peak = data.peak;
+                    if (data.bpm) songObject.bpm = data.bpm;
+        
+                    if (data.manifest) {
+                        const decodedManifest = JSON.parse(atob(data.manifest));
                         if (decodedManifest.urls && decodedManifest.urls[0]) {
                             const audioUrl = decodedManifest.urls[0];
                             console.log(`Found direct URL via /track manifest for quality: ${quality}`);
