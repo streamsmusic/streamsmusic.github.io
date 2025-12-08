@@ -1926,6 +1926,27 @@
         body.radio-mode {
             --secondary-text-color: #ff4081; /* Pink accent for radio mode */
         }
+
+        body.radio-mode .queue-button {
+            display: none;
+        }
+
+        body.radio-mode #prevBtn {
+            pointer-events: none;
+            opacity: 0.5;
+        }
+
+        body.radio-mode .player-controls {
+            justify-content: space-evenly;
+        }
+
+        body.radio-mode #shuffleBtn, #repeatBtn {
+            display: none;
+        }
+
+        body.radio-mode .now-queue {
+            display: none;
+        }
         
         /* Hide queue controls in radio mode */
         .radio-locked .remove-from-queue-btn {
