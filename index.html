@@ -6858,8 +6858,12 @@ async function playtidalTrack(trackId, playContext = null) {
         }
         
         // If not in cache, proceed with the original online logic
+        // Check playQueue as well to support Radio tracks
         const trackData = lasttidalSearchResults.find(t => t.id === numericTrackId) ||
-                          currentDrawerContext.find(t => t.id === numericTrackId);
+                          currentDrawerContext.find(t => t.id === numericTrackId) ||
+                          playQueue.find(t => t.id === numericTrackId);
+
+        if (!trackData) throw new Error("Track not found in search results, queue, or cache");
 
         if (!trackData) throw new Error("Track not found in search results or cache");
 
@@ -8360,6 +8364,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const tidalSearchInput = document.getElementById('tidalSearchInput');
         tidalSearchInput.addEventListener('input', () => {
+            const val = tidalSearchInput.value.trim();
+            const browseContainer = document.getElementById('tidal-browse-container');
+            const resultsGrid = document.getElementById('tidal-results-grid');
+
+            // Toggle views based on input
+            if (!val) {
+                if (browseContainer) browseContainer.style.display = 'block';
+                if (resultsGrid) resultsGrid.style.display = 'none';
+                renderDiscoverBrowse(); // Ensure genres are shown
+                return;
+            } else {
+                if (browseContainer) browseContainer.style.display = 'none';
+                if (resultsGrid) resultsGrid.style.display = 'grid';
+            }
+
+            // Perform search
             clearTimeout(tidalSearchTimeout);
             tidalSearchTimeout = setTimeout(searchtidal, 300);
         });
