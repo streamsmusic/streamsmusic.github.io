@@ -2466,6 +2466,7 @@
         let songs = [];
         let currentSongId = null;
         let isPlayerLoading = false;
+        let playbackLoader = null; // Controls the abort signal for the current track load
         let db;
         let sessionPlayedIds = new Set(); // Track all songs played/queued to prevent repeats
         let lastSongStartTime = 0;
@@ -6858,7 +6859,7 @@ async function saveAlbumContent(tracks, albumName, silent = false) {
     }
 }
         
-async function processAndCacheAudio(songObject) {
+async function processAndCacheAudio(songObject, signal = null) {
     try {
         const baseQualityLevels = ['LOSSLESS', 'HIGH', 'LOW'];
         let qualityLevelsToTry = [];
@@ -6879,20 +6880,22 @@ async function processAndCacheAudio(songObject) {
             if (concatenatedBlob) break;
             const trackUrl = `${hifiApiBaseUrl}/track/?id=${songObject.id}&quality=${quality}`;
             try {
-                const response = await fetch(trackUrl);
+                // PASS SIGNAL HERE
+                const response = await fetch(trackUrl, { signal });
                 if (response.ok) {
                     const responseData = await response.json();
                     const data = responseData.data || {};
-        
+
                     if (data.peak) songObject.peak = data.peak;
                     if (data.bpm) songObject.bpm = data.bpm;
-        
+
                     if (data.manifest) {
                         const decodedManifest = JSON.parse(atob(data.manifest));
                         if (decodedManifest.urls && decodedManifest.urls[0]) {
                             const audioUrl = decodedManifest.urls[0];
                             console.log(`Found direct URL via /track manifest for quality: ${quality}`);
-                            const audioResponse = await fetch(audioUrl);
+                            // PASS SIGNAL HERE
+                            const audioResponse = await fetch(audioUrl, { signal });
                             if (audioResponse.ok) {
                                 concatenatedBlob = await audioResponse.blob();
                             }
@@ -6900,6 +6903,7 @@ async function processAndCacheAudio(songObject) {
                     }
                 }
             } catch(e) {
+                if (e.name === 'AbortError') throw e; // Rethrow abort
                 console.warn(`Request to /track with quality ${quality} failed:`, e);
             }
         }
@@ -6911,7 +6915,8 @@ async function processAndCacheAudio(songObject) {
                 if (concatenatedBlob) break;
                 const manifestUrl = `${hifiApiBaseUrl}/dash/?id=${songObject.id}&quality=${quality}`;
                 try {
-                    const response = await fetch(manifestUrl);
+                    // PASS SIGNAL HERE
+                    const response = await fetch(manifestUrl, { signal });
                     if (!response.ok) continue;
 
                     const text = await response.text();
@@ -6935,8 +6940,9 @@ async function processAndCacheAudio(songObject) {
                         for (let i = 0; i < segments.length; i++) {
                             segmentUrls.push(mediaUrlTemplate.replace('$Number$', i + 1));
                         }
+                        // PASS SIGNAL HERE (Mapped fetches)
                         const [initSegmentBlob, ...mediaSegmentBlobs] = await Promise.all(
-                            [initUrl, ...segmentUrls].map(url => fetch(url).then(res => res.blob()))
+                            [initUrl, ...segmentUrls].map(url => fetch(url, { signal }).then(res => res.blob()))
                         );
                         concatenatedBlob = new Blob([initSegmentBlob, ...mediaSegmentBlobs], { type: 'audio/mp4' });
                     } else {
@@ -6944,7 +6950,8 @@ async function processAndCacheAudio(songObject) {
                             const directUrlData = JSON.parse(text);
                             if (directUrlData && directUrlData.urls && directUrlData.urls.length > 0) {
                                 console.log(`Found direct URL via /dash for quality: ${quality}`);
-                                const audioResponse = await fetch(directUrlData.urls[0]);
+                                // PASS SIGNAL HERE
+                                const audioResponse = await fetch(directUrlData.urls[0], { signal });
                                 if (audioResponse.ok) {
                                     concatenatedBlob = await audioResponse.blob();
                                 }
@@ -6954,6 +6961,7 @@ async function processAndCacheAudio(songObject) {
                         }
                     }
                 } catch (e) {
+                    if (e.name === 'AbortError') throw e; // Rethrow abort
                     console.warn(`Request to /dash with quality ${quality} failed:`, e);
                 }
             }
@@ -6975,6 +6983,10 @@ async function processAndCacheAudio(songObject) {
         await manageCacheSize();
         return cacheEntry;
     } catch (error) {
+        if (error.name === 'AbortError') {
+            console.log(`Aborted audio processing for ${songObject.name}`);
+            return null;
+        }
         console.error(`Failed to cache audio for ${songObject.name}:`, error);
         return null;
     }
@@ -7005,6 +7017,13 @@ async function updatetidalCacheWithLyrics(song) {
 }
 
 async function playtidalTrack(trackId, playContext = null) {
+    // 1. Halt previous efforts
+    if (playbackLoader) {
+        playbackLoader.abort();
+    }
+    playbackLoader = new AbortController(); // Create new controller for this song
+    const signal = playbackLoader.signal;
+    
     const numericTrackId = Number(trackId);
     let songObject;
     try {
@@ -7068,7 +7087,15 @@ async function playtidalTrack(trackId, playContext = null) {
         setPlayerLoadingState(true, songObject);
 
         console.log("Track not cached. Processing audio before playback.");
-        const newCachedSong = await processAndCacheAudio(songObject);
+        
+        // PASS SIGNAL to halt download if skipped
+        const newCachedSong = await processAndCacheAudio(songObject, signal);
+        
+        if (signal.aborted) {
+            console.log("Playback aborted before starting.");
+            return;
+        }
+        
         if (newCachedSong) {
             const songToPlay = newCachedSong.metadata;
             songToPlay.blobUrl = URL.createObjectURL(newCachedSong.blob);
@@ -7078,12 +7105,15 @@ async function playtidalTrack(trackId, playContext = null) {
             throw new Error("Caching and processing failed.");
         }
     } catch (error) {
+        if (signal.aborted) return; // Ignore errors caused by abort
         console.error(`Failed to play Hi-Fi track ${numericTrackId}:`, error);
         Gurasuraisu.showPopup("Cannot play selected item");
         isPlayerLoading = false;
         playNextSong({ userInitiated: false });
     } finally {
-        setPlayerLoadingState(false, songObject);
+        if (!signal.aborted) {
+            setPlayerLoadingState(false, songObject);
+        }
     }
 }
         
