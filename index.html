@@ -7029,21 +7029,36 @@ async function playtidalTrack(trackId, playContext = null) {
 
         if (!trackData) throw new Error("Track not found in search results, queue, or cache");
 
-        if (!trackData) throw new Error("Track not found in search results or cache");
-
         if (trackData.isrc && isrcToLocalSongMap.has(trackData.isrc)) {
             const localSong = isrcToLocalSongMap.get(trackData.isrc);
-            console.log(`Found local version for "${trackData.title}". Playing from library.`);
+            console.log(`Found local version for "${trackData.title || trackData.name}". Playing from library.`);
             await playSong(localSong, null);
             return;
         }
 
+        // Fix: Determine if data is already normalized (from Queue/Radio) or Raw (from API)
+        const isNormalized = trackData.storage === 'tidal' && typeof trackData.artist === 'string';
+
+        const title = isNormalized ? trackData.name : trackData.title;
+        const artist = isNormalized ? trackData.artist : (trackData.artist ? trackData.artist.name : "Unknown Artist");
+        const album = isNormalized ? trackData.album : (trackData.album ? trackData.album.title : "Unknown Album");
+        const albumArt = isNormalized ? trackData.albumArt : getHighResArtwork(trackData.album ? trackData.album.cover : null);
+        const vibrantColor = isNormalized ? trackData.vibrantColor : (trackData.album ? trackData.album.vibrantColor : null);
+
         songObject = {
-            id: trackData.id, name: trackData.title, artist: trackData.artist.name,
-            album: trackData.album.title, albumArt: getHighResArtwork(trackData.album.cover),
-            storage: 'tidal', duration: trackData.duration, audioQuality: trackData.audioQuality,
-            trackNumber: trackData.trackNumber, volumeNumber: trackData.volumeNumber,
-            isrc: trackData.isrc, copyright: trackData.copyright, vibrantColor: trackData.album.vibrantColor,
+            id: trackData.id, 
+            name: title, 
+            artist: artist,
+            album: album, 
+            albumArt: albumArt,
+            storage: 'tidal', 
+            duration: trackData.duration, 
+            audioQuality: trackData.audioQuality,
+            trackNumber: trackData.trackNumber, 
+            volumeNumber: trackData.volumeNumber,
+            isrc: trackData.isrc, 
+            copyright: trackData.copyright, 
+            vibrantColor: vibrantColor,
             peak: trackData.peak,
             bpm: trackData.bpm
         };
