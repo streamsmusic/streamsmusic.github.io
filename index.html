@@ -2078,12 +2078,12 @@
     </div>
     <div id="radio-view" class="view-container" style="display: none;">
         <div class="page-content-wrapper">
-            <div class="search-container" style="margin-bottom: 20px;">
+            <div class="search-container" style="position: absolute; width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
                 <span class="material-symbols-rounded search-icon" style="padding-left: 2px;">search</span>
                 <input type="text" id="radioSearchInput" placeholder="Start a station" class="library-search-input" style="box-shadow: var(--sun-shadow), 0 0 15px rgba(0, 0, 0, 0.05); padding: 12px 17px 12px 42px;">
             </div>
             
-            <div id="radio-suggestions">
+            <div id="radio-suggestions" style="padding-top: 70px;">
                 <h3 class="section-title" style="font-size: 1.2rem;">Stations for You</h3>
                 <div id="radio-grid" class="item-grid">
                     <!-- Dynamic stations based on library -->
