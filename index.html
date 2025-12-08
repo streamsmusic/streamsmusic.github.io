@@ -2506,10 +2506,11 @@
         let isFetchingQueue = false; // Lock to prevent overlapping fetches
 
         function toggleQueueLoading(show) {
-        const container = document.querySelector('.queue-list-container');
-        // If queue panel isn't rendered yet but we are loading, we might need to render the empty shell first
-        if (!container && show && isPanelVisible && panelContent === 'queue') {
-            renderQueue(); // Force render if missing
+            const container = document.querySelector('.queue-list-container');
+            // If queue panel isn't rendered yet but we are loading, we might need to render the empty shell first
+            if (!container && show && isPanelVisible && panelContent === 'queue') {
+                renderQueue(); // Force render if missing
+            }
         }
         
         const targetContainer = document.querySelector('.queue-list-container');
