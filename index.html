@@ -1921,6 +1921,33 @@
             transition: opacity 0.2s, background-color 0.2s;
             color: var(--text-color);
         }
+
+        /* Radio Mode Styles */
+        body.radio-mode {
+            --secondary-text-color: #ff4081; /* Pink accent for radio mode */
+        }
+        
+        /* Hide queue controls in radio mode */
+        .radio-locked .remove-from-queue-btn {
+            display: none !important;
+        }
+        .radio-locked .queue-item {
+            cursor: default !important;
+        }
+        
+        /* Browse Pills */
+        .genre-pill {
+            padding: 10px 20px;
+            background: var(--search-background);
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--sun-shadow);
+            border-radius: 20px;
+            color: var(--text-color);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            backdrop-filter: var(--edge-refraction-filter) saturate(2) blur(2.5px);
+        }
     </style>
 </head>
 <body data-app-name="STREAMS">
@@ -1991,6 +2018,10 @@
             <span class="material-symbols-rounded">backpack</span>
             Owned
         </button>
+        <button class="tab-btn" data-view="radio">
+            <span class="material-symbols-rounded">podcasts</span>
+            Radio
+        </button>
         <button class="tab-btn" data-view="tidal" id="tidal-tab" style="display: none;">
             <span class="material-symbols-rounded">explore</span>
             Discover
@@ -2028,6 +2059,21 @@
              <input type="file" accept="audio/*" style="display: none" id="musicUpload" multiple webkitdirectory>
         </div>
     </div>
+    <div id="radio-view" class="view-container" style="display: none;">
+        <div class="page-content-wrapper">
+            <div class="search-container" style="margin-bottom: 20px;">
+                <span class="material-symbols-rounded search-icon" style="padding-left: 2px;">search</span>
+                <input type="text" id="radioSearchInput" placeholder="Start a station" class="library-search-input" style="box-shadow: var(--sun-shadow), 0 0 15px rgba(0, 0, 0, 0.05); padding: 12px 17px 12px 42px;">
+            </div>
+            
+            <div id="radio-suggestions">
+                <h3 class="section-title" style="font-size: 1.2rem;">Stations for You</h3>
+                <div id="radio-grid" class="item-grid">
+                    <!-- Dynamic stations based on library -->
+                </div>
+            </div>
+        </div>
+    </div>
     <div id="tidal-view" class="view-container" style="display: none;">
         <div class="page-content-wrapper">
             <div class="library-controls" id="tidal-controls">
@@ -2046,10 +2092,19 @@
                     </button>
                 </div>
             </div>
-
+            
             <div class="search-container" id="tidal-search-container" style="position: absolute; width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
                 <span class="material-symbols-rounded search-icon" style="padding-left: 2px;">search</span>
                 <input type="text" id="tidalSearchInput" placeholder="Search" class="library-search-input" style="box-shadow: var(--sun-shadow), 0 0 15px rgba(0, 0, 0, 0.05); padding: 12px 17px 12px 42px;">
+            </div>
+            
+            <div id="tidal-browse-container" style="padding-top: 70px; padding-bottom: 240px; display: none;">
+                <h3 class="section-title" style="font-size: 1.2rem;">Browse Categories</h3>
+                <div class="filter-container" id="genre-pills" style="flex-wrap: wrap; justify-content: flex-start; margin-bottom: 20px;">
+                    <!-- Genres injected here -->
+                </div>
+                <h3 class="section-title" style="font-size: 1.2rem;">Trending Now</h3>
+                <div id="tidal-trending-grid" class="item-grid"></div>
             </div>
             
             <div id="tidal-results-grid" class="item-grid" style="padding-top: 60px; padding-bottom: 240px;">
@@ -2441,6 +2496,9 @@
         let localSongLookup = new Map();
         let isrcToLocalSongMap = new Map()
         let hifiApiBaseUrl = "https://wolf.qqdl.site"; // Default fallback
+        let isRadioMode = false;
+        let radioSeed = null; // { type: 'artist'|'track', query: '...' }
+        const GENRES = ["Pop", "Hip-Hop", "R&B", "Electronic", "Rock", "Indie", "K-Pop", "J-Pop", "Classical", "Jazz", "Metal", "Alternative", "Country"];
         const hifiApiEndpoints = [
             "https://wolf.qqdl.site",
             "https://maus.qqdl.site",
@@ -2649,6 +2707,110 @@ function renderSearchResults() {
     });
 }
 
+function renderRadioPage() {
+    const grid = document.getElementById('radio-grid');
+    grid.innerHTML = '';
+    
+    // 1. Feature: Create radio stations from user's top artists
+    // Use a Set to get unique artists from the library
+    const libraryArtists = [...new Set(songs.map(s => s.artist).filter(Boolean))];
+    const suggestions = shuffleArray(libraryArtists).slice(0, 8);
+
+    if (suggestions.length === 0) {
+        grid.innerHTML = `<div class="no-results"><p>Own some songs to get personalized stations.</p></div>`;
+        return;
+    }
+
+    const html = suggestions.map(artist => {
+        // Find art for this artist
+        const song = songs.find(s => s.artist === artist);
+        return `
+        <div class="item-card" onclick="startRadio('artist', '${sanitize(artist)}')">
+            <div style="position: relative;">
+                <img src="${song.albumArt}" class="item-card-art" style="border-radius: 50%;">
+                <div style="position: absolute; bottom: 5px; right: 5px; background: var(--text-color); color: var(--background-color); border-radius: 50%; padding: 5px;">
+                    <span class="material-symbols-rounded" style="font-size: 20px; display:block;">radio</span>
+                </div>
+            </div>
+            <div class="item-card-info" style="text-align: center;">
+                <div class="item-card-title">${sanitize(artist)} Radio</div>
+                <div class="item-card-subtitle">Station</div>
+            </div>
+        </div>`;
+    }).join('');
+
+    grid.innerHTML = html;
+}
+
+async function startRadio(type, query) {
+    if (!istidalEnabled) return Gurasuraisu.showPopup("Enable Streaming for Radio");
+    
+    isRadioMode = true;
+    radioSeed = { type, query };
+    document.body.classList.add('radio-mode');
+    
+    // Clear queue but don't stop playback yet
+    playQueue = [];
+    currentQueueIndex = -1;
+    
+    Gurasuraisu.showPopup(`Starting ${query} Radio...`);
+    
+    // 2. Feature: Contextual Radio Generation (Fetch & Shuffle)
+    await appendRadioTracks();
+    
+    if (playQueue.length > 0) {
+        // Play the first song
+        const firstSong = playQueue[0];
+        // 3. Feature: Force Tidal playback for radio
+        if (firstSong.storage === 'tidal') {
+            playtidalTrack(firstSong.id);
+        }
+    }
+    
+    setView('now-playing');
+}
+
+async function appendRadioTracks() {
+    // 4. Feature: Endless Generation (Fetch similar)
+    // We simulate "Similar" by searching for the seed or related genre
+    const query = radioSeed.query;
+    
+    // Randomize offset to make it feel endless and random
+    const offset = Math.floor(Math.random() * 100); 
+    const url = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(query)}&limit=25&offset=${offset}`;
+    
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+        const rawItems = (data.data || data).items || []; // Handle both API versions
+        
+        let newTracks = rawItems.map(track => ({
+            id: track.id,
+            name: track.title,
+            artist: track.artist.name,
+            album: track.album.title,
+            albumArt: getHighResArtwork(track.album.cover),
+            storage: 'tidal',
+            duration: track.duration,
+            audioQuality: track.audioQuality
+        }));
+        
+        // 5. Feature: Filter duplicates
+        const existingIds = new Set(playQueue.map(s => s.id));
+        newTracks = newTracks.filter(t => !existingIds.has(t.id));
+        
+        // Shuffle the new batch
+        shuffleArray(newTracks);
+        
+        playQueue.push(...newTracks);
+        
+        if (isPanelVisible && panelContent === 'queue') renderQueue();
+        
+    } catch (e) {
+        console.error("Radio fetch failed", e);
+    }
+}
+
         function rendertidalSearchResults(totalItems = 0) {
             const resultsGrid = document.getElementById('tidal-results-grid');
             if (lasttidalSearchResults.length === 0) {
@@ -2732,6 +2894,8 @@ function setView(viewName) {
         if (isVisible) {
             if (viewName === 'library') { renderLibraryPage(); } 
             else if (viewName === 'home') { renderHomePage(); } 
+            else if (viewName === 'radio') renderRadioPage();
+            else if (viewName === 'tidal') rendertidalPage();
             else if (viewName === 'search') { renderSearchResults(); }
         }
     });
@@ -5096,15 +5260,19 @@ async function renderOfflinetidalView() {
 }
 
 // This new function will control the view in the "New" tab
-function rendertidalPage() {
+async function rendertidalPage() {
     const searchContainer = document.getElementById('tidal-search-container');
     const offlineSearchContainer = document.getElementById('tidal-offline-search-container');
     const filterContainer = document.getElementById('tidal-filter-container');
+    const browseContainer = document.getElementById('tidal-browse-container');
+    const resultsGrid = document.getElementById('tidal-results-grid');
+    const input = document.getElementById('tidalSearchInput');
     
     if (istidalOfflineMode) {
         searchContainer.style.display = 'none';
         offlineSearchContainer.style.display = 'flex';
         filterContainer.style.display = 'none';
+        browseContainer.style.display = 'none';
         document.getElementById('tidalOfflineToggle').classList.add('active');
         renderOfflinetidalView();
     } else {
@@ -5113,8 +5281,53 @@ function rendertidalPage() {
         filterContainer.style.display = 'flex';
         document.getElementById('tidalOfflineToggle').classList.remove('active');
         document.getElementById('tidalOfflineSearchInput').value = '';
-        rendertidalSearchResults();
+        
+        // 8. Feature: Discover Landing Page (Categories & Charts)
+        if (!input.value.trim()) {
+            resultsGrid.style.display = 'none';
+            browseContainer.style.display = 'block';
+            renderDiscoverBrowse();
+        } else {
+            browseContainer.style.display = 'none';
+            resultsGrid.style.display = 'grid';
+            rendertidalSearchResults();
+        }
     }
+}
+
+// 9. Feature: Render Genres/Charts
+async function renderDiscoverBrowse() {
+    const pillsContainer = document.getElementById('genre-pills');
+    if (pillsContainer.innerHTML === '') {
+        pillsContainer.innerHTML = GENRES.map(g => 
+            `<div class="genre-pill" onclick="searchGenre('${g}')">${g}</div>`
+        ).join('');
+    }
+    
+    const trendingGrid = document.getElementById('tidal-trending-grid');
+    if (trendingGrid.innerHTML === '') {
+        // Fetch "Trending" (Just a search for 'top hits' as proxy)
+        try {
+            const res = await fetch(`${hifiApiBaseUrl}/search/?s=top%20hits&limit=8`);
+            const data = await res.json();
+            const items = (data.data || data).items || [];
+            trendingGrid.innerHTML = items.map(track => `
+                <div class="item-card" onclick="playtidalTrack(${track.id})">
+                    <img src="${getHighResArtwork(track.album.cover)}" class="item-card-art">
+                    <div class="item-card-info">
+                        <div class="item-card-title">${sanitize(track.title)}</div>
+                        <div class="item-card-subtitle">${sanitize(track.artist.name)}</div>
+                    </div>
+                </div>
+            `).join('');
+        } catch(e) {}
+    }
+}
+
+function searchGenre(genre) {
+    const input = document.getElementById('tidalSearchInput');
+    input.value = genre;
+    input.dispatchEvent(new Event('input')); // Trigger search
 }
         
 function renderQueue() {
@@ -5132,6 +5345,8 @@ function renderQueue() {
         </div>
     `;
 
+    const lockedClass = isRadioMode ? 'radio-locked' : '';
+    
     if (playQueue.length === 0) {
         lyricsQueuePanel.innerHTML = headerHtml + `
             <div class="now-queue">
@@ -5157,6 +5372,7 @@ function renderQueue() {
         
         lyricsQueuePanel.innerHTML = `<div class="now-queue">${headerHtml}<div class="queue-list-container" style="margin-top: 10px;">${queueHtml}</div></div>`;
     }
+    
 
     // Attach event listener for the new toggle switch
     const autoplayToggle = document.getElementById('autoplayToggle');
@@ -5164,7 +5380,8 @@ function renderQueue() {
         autoplayToggle.addEventListener('change', toggleAutoplay);
     }
 
-    makeQueueItemsDraggable();
+    // Disable drag if radio
+    if (!isRadioMode) makeQueueItemsDraggable();
     addQueueItemEventListeners();
 }
 
@@ -7012,6 +7229,12 @@ async function playNextSong({ userInitiated = false, isTransition = false } = {}
     if (!playQueue || playQueue.length === 0) return;
     
     currentQueueIndex++;
+
+    // Infinite Radio Scroll
+    if (isRadioMode && playQueue.length - currentQueueIndex < 3) {
+        console.log("Radio running low, fetching more...");
+        appendRadioTracks(); // Async background fetch
+    }
     
     // If we have reached the end of the queue AND autoplay is enabled...
     if (isAutoplayEnabled && currentQueueIndex >= playQueue.length) {
@@ -7041,6 +7264,12 @@ async function playNextSong({ userInitiated = false, isTransition = false } = {}
 }
         
 function playPreviousSong() {
+    // 6. Feature: Restricted Controls (No Rewind in Radio)
+    if (isRadioMode) {
+        Gurasuraisu.showPopup("Cannot rewind in Radio");
+        return;
+    }
+
     if (repeatMode === 'one') toggleRepeat();
     if (!playQueue.length) return;
     if (audioPlayer.currentTime > 5) {
@@ -7681,6 +7910,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
         });
+    
+        document.getElementById('radioSearchInput').addEventListener('change', (e) => {
+            if(e.target.value.trim()) startRadio('query', e.target.value.trim());
+        });
+    
         
         document.getElementById('home-view').addEventListener('click', (e) => {
             const highlightCard = e.target.closest('.highlight-card[data-id]');
@@ -8606,6 +8840,10 @@ async function loadSongsAndPlaylists() {
         // Hook into main app events
         const originalPlaySong = playSong;
         playSong = async function(song, context) {
+            if (context !== null) { // Context is null when clicking queue items
+                 isRadioMode = false;
+                 document.body.classList.remove('radio-mode');
+            }
             await originalPlaySong(song, context);
             RemoteInterface.onTrackChange();
         };
