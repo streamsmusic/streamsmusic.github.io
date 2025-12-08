@@ -2468,6 +2468,8 @@
         let isPlayerLoading = false;
         let db;
         let sessionPlayedIds = new Set(); // Track all songs played/queued to prevent repeats
+        let lastSongStartTime = 0;
+        let consecutiveRapidSkips = 0;
         let directoryHandles = []; // For File System Access API
         let isShuffleEnabled = false;
         let repeatMode = 'none'; // 'none', 'all', or 'one'
@@ -6005,6 +6007,8 @@ async function playSong(song, playContext = null) {
             }
         });
 
+        lastSongStartTime = Date.now();
+
         proactivelyCacheNextInQueue();
 
         playPauseIcon.textContent = 'pause';
@@ -6360,29 +6364,50 @@ async function cachetidalTrack(songObject, streamUrl) {
     }
 }
 
-// This is a NEW function for proactive background caching
 async function proactivelyCacheNextInQueue() {
     if (playQueue.length === 0 || currentQueueIndex < 0) return;
 
-    // Look ahead 2 songs in the queue
-    for (let i = 1; i <= 2; i++) {
+    // ** Dynamic Caching Strategy **
+    let cacheDepth = 2; // Default
+    
+    // 1. Check User Behavior: If skipping rapidly, reduce depth to save bandwidth
+    if (consecutiveRapidSkips >= 3) {
+        cacheDepth = 1;
+        console.log("Rapid skipping mode: Reducing cache buffer to 1.");
+    } 
+    // 2. Check Song Duration:
+    else if (currentlyPlayingSong) {
+        // Use metadata duration (API) or player duration
+        const duration = currentlyPlayingSong.duration || audioPlayer.duration || 0;
+        
+        if (duration > 0 && duration < 180) { 
+            // Short song (< 3 mins): Cache MORE because the next track comes sooner
+            cacheDepth = 3;
+        } else if (duration > 300) {
+            // Long song (> 5 mins): Cache LESS initially, we have plenty of time
+            cacheDepth = 1;
+        }
+    }
+
+    // Look ahead based on calculated depth
+    for (let i = 1; i <= cacheDepth; i++) {
         const nextIndex = currentQueueIndex + i;
         if (nextIndex >= playQueue.length) break;
 
         const nextSong = playQueue[nextIndex];
+        
+        // Only cache Tidal songs that aren't already cached
         if (nextSong.storage === 'tidal') {
             const tx = db.transaction('tidalCache', 'readonly');
             const store = tx.objectStore('tidalCache');
             const checkReq = store.get(nextSong.id);
 
-            // Use an async function for the callback to handle the caching process
             checkReq.onsuccess = async () => {
-                // If the song is not already in the cache, start the process
                 if (!checkReq.result) {
-                    console.log(`Proactively caching next song: ${nextSong.name}`);
+                    console.log(`Proactively caching [${i}/${cacheDepth}]: ${nextSong.name}`);
                     try {
-                        // THE FIX: Call the main, self-sufficient caching function.
-                        // It already contains all the necessary logic for resilient, proxied fetching.
+                        // Use a small delay for subsequent items to prioritize the immediate next song
+                        if (i > 1) await new Promise(r => setTimeout(r, 2000));
                         await processAndCachetidalTrack(nextSong);
                     } catch (err) {
                         console.error(`Failed to proactively cache ${nextSong.name}:`, err);
@@ -7373,6 +7398,19 @@ function updateQueueFromDOM() {
 }
         
 async function playNextSong({ userInitiated = false, isTransition = false } = {}) {
+    if (userInitiated) {
+        const timeListened = (Date.now() - lastSongStartTime) / 1000;
+        if (timeListened < 30) {
+            consecutiveRapidSkips++;
+            console.log(`Rapid skip detected (${timeListened.toFixed(1)}s). Streak: ${consecutiveRapidSkips}`);
+        } else {
+            consecutiveRapidSkips = 0;
+        }
+    } else {
+        // Natural end of song reset
+        consecutiveRapidSkips = 0;
+    }
+        
     if (userInitiated && repeatMode === 'one') toggleRepeat();
     if (!userInitiated && !isTransition && repeatMode === 'one') {
         audioPlayer.currentTime = 0;
