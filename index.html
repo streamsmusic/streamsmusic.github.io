@@ -7114,14 +7114,24 @@ async function removeFolder(folderName) {
         }
     
         async function fetchLyrics(song) {
-            if (song.storage === 'tidal') { // 'tidal' now means 'hifi'
-                return await fetchLyricsFromHifi(song);
-            } else if (isLrclibEnabled) { // For local files, use LRCLIB if enabled
-                return await fetchLyricsFromLrclib(song);
-            }
-            return null;
-        }
+            let lyrics = null;
 
+            // 1. Try HiFi (Native) API first for Tidal songs
+            // This is preferred because it matches by ID (100% accuracy)
+            if (song.storage === 'tidal') {
+                lyrics = await fetchLyricsFromHifi(song);
+            }
+
+            // 2. Fallback: If no lyrics found (or not Tidal), and LRCLIB is enabled, try LRCLIB
+            // This matches by Artist/Title (Fuzzy match)
+            if (!lyrics && isLrclibEnabled) {
+                console.log(`Primary lyrics failed for "${song.name}", trying LRCLIB fallback...`);
+                lyrics = await fetchLyricsFromLrclib(song);
+            }
+
+            return lyrics;
+        }
+        
         async function fetchLyricsFromHifi(song) {
             if (!song || !song.id) return null;
             try {
