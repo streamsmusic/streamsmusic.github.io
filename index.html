@@ -774,6 +774,10 @@
             font-variant-numeric: tabular-nums;
             font-size: 0.9rem;
         }
+
+        #player-status {
+            font-weight: 600;
+        }
         
         .controls-container {
             display: flex;
@@ -1936,7 +1940,7 @@
             justify-content: space-evenly;
         }
 
-        body.radio-mode #shuffleBtn, #repeatBtn {
+        body.radio-mode #shuffleBtn, body.radio-mode #repeatBtn {
             display: none;
         }
 
@@ -2161,6 +2165,7 @@
                 </div>
                 <div class="time-info">
                     <span id="currentTime">&nbsp;</span>
+                    <span id="player-status"></span>
                     <span id="duration">&nbsp;</span>
                 </div>
             </div>
@@ -2788,40 +2793,58 @@ async function startRadio(type, query) {
 }
 
 async function appendRadioTracks() {
-    // 4. Feature: Endless Generation (Fetch similar)
-    // We simulate "Similar" by searching for the seed or related genre
     const query = radioSeed.query;
     
-    // Randomize offset to make it feel endless and random
-    const offset = Math.floor(Math.random() * 100); 
-    const url = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(query)}&limit=25&offset=${offset}`;
-    
+    // 4. Feature: Endless Generation
+    // Use a larger random range. If previous attempts failed, try a fallback genre.
+    let offset = Math.floor(Math.random() * 250); 
+    let searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(query)}&limit=50&offset=${offset}`;
+
     try {
-        const res = await fetch(url);
-        const data = await res.json();
-        const rawItems = (data.data || data).items || []; // Handle both API versions
+        let res = await fetch(searchUrl);
+        let data = await res.json();
+        let rawItems = (data.data || data).items || [];
+
+        // Fallback: If strict search yields nothing (end of list), try a random genre to keep music playing
+        if (rawItems.length === 0) {
+            console.log("Radio seed exhausted, pivoting to random genre...");
+            const randomGenre = GENRES[Math.floor(Math.random() * GENRES.length)];
+            offset = Math.floor(Math.random() * 100);
+            searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(randomGenre)}&limit=50&offset=${offset}`;
+            res = await fetch(searchUrl);
+            data = await res.json();
+            rawItems = (data.data || data).items || [];
+        }
         
         let newTracks = rawItems.map(track => ({
             id: track.id,
-            name: track.title,
-            artist: track.artist.name,
-            album: track.album.title,
+            name: track.title, // Ensure exact property mapping
+            artist: track.artist.name || "Unknown Artist",
+            album: track.album.title || "Unknown Album",
             albumArt: getHighResArtwork(track.album.cover),
             storage: 'tidal',
             duration: track.duration,
-            audioQuality: track.audioQuality
+            audioQuality: track.audioQuality,
+            vibrantColor: track.album.vibrantColor
         }));
         
         // 5. Feature: Filter duplicates
         const existingIds = new Set(playQueue.map(s => s.id));
         newTracks = newTracks.filter(t => !existingIds.has(t.id));
         
-        // Shuffle the new batch
+        // Shuffle the new batch thoroughly
         shuffleArray(newTracks);
         
-        playQueue.push(...newTracks);
-        
-        if (isPanelVisible && panelContent === 'queue') renderQueue();
+        if (newTracks.length > 0) {
+            playQueue.push(...newTracks);
+            if (isPanelVisible && panelContent === 'queue') renderQueue();
+        } else {
+            // Safety valve: if still no tracks, try again recursively with a generic query
+            if (!query.includes("top")) {
+                radioSeed.query = "top hits"; 
+                appendRadioTracks();
+            }
+        }
         
     } catch (e) {
         console.error("Radio fetch failed", e);
@@ -7252,9 +7275,9 @@ async function playNextSong({ userInitiated = false, isTransition = false } = {}
     currentQueueIndex++;
 
     // Infinite Radio Scroll
-    if (isRadioMode && playQueue.length - currentQueueIndex < 3) {
+    if (isRadioMode && playQueue.length - currentQueueIndex < 5) {
         console.log("Radio running low, fetching more...");
-        appendRadioTracks(); // Async background fetch
+        appendRadioTracks(); 
     }
     
     // If we have reached the end of the queue AND autoplay is enabled...
@@ -7675,6 +7698,17 @@ async function verifyPermission(handle, shouldRequest = false) {
             updateAllBackgrounds(song.albumArt);
             updateFavicon(song.albumArt);
             updateTimeDisplays(progress, audioPlayer.duration);
+
+            const statusEl = document.getElementById('player-status');
+            if (statusEl) {
+                if (isRadioMode) {
+                    statusEl.textContent = 'Station';
+                } else if (song.storage === 'tidal' && song.audioQuality === 'LOSSLESS') {
+                    statusEl.textContent = 'Lossless';
+                } else {
+                    statusEl.textContent = '';
+                }
+            }
 
             // **MODIFICATION**: Prioritize the known (trimmed) duration from the song object
             const displayDuration = song.duration || audioPlayer.duration || 0;
