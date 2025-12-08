@@ -2798,19 +2798,19 @@ async function startRadio(type, query) {
     radioSeed = { type, query };
     document.body.classList.add('radio-mode');
     
-    // Clear queue but don't stop playback yet
     playQueue = [];
     currentQueueIndex = -1;
     
-    Gurasuraisu.showPopup(`Starting ${query} Radio...`);
+    if (isPanelVisible && panelContent === 'queue') {
+        renderQueue();
+    }
     
-    // 2. Feature: Contextual Radio Generation (Fetch & Shuffle)
+    Gurasuraisu.showPopup(`Starting ${query} Radio`);
+    
     await appendRadioTracks();
     
     if (playQueue.length > 0) {
-        // Play the first song
         const firstSong = playQueue[0];
-        // 3. Feature: Force Tidal playback for radio
         if (firstSong.storage === 'tidal') {
             playtidalTrack(firstSong.id);
         }
