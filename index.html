@@ -2467,6 +2467,7 @@
         let currentSongId = null;
         let isPlayerLoading = false;
         let db;
+        let sessionPlayedIds = new Set(); // Track all songs played/queued to prevent repeats
         let directoryHandles = []; // For File System Access API
         let isShuffleEnabled = false;
         let repeatMode = 'none'; // 'none', 'all', or 'one'
@@ -2502,6 +2503,32 @@
         let playlistModal, sleepTimerModal;
         let currentSortMode = 'dateAdded'; // 'dateAdded', 'alpha'
         let activeAlbum = null; // Will store { artist, name } of the selected album
+        let isFetchingQueue = false; // Lock to prevent overlapping fetches
+
+        function toggleQueueLoading(show) {
+        const container = document.querySelector('.queue-list-container');
+        // If queue panel isn't rendered yet but we are loading, we might need to render the empty shell first
+        if (!container && show && isPanelVisible && panelContent === 'queue') {
+            renderQueue(); // Force render if missing
+        }
+        
+        const targetContainer = document.querySelector('.queue-list-container');
+        if (!targetContainer) return;
+    
+        const existingLoader = document.getElementById('queue-loader');
+        
+        if (show) {
+            if (!existingLoader) {
+                const loader = document.createElement('div');
+                loader.id = 'queue-loader';
+                loader.style.cssText = 'padding: 15px; text-align: center; color: var(--secondary-text-color); display: flex; align-items: center; justify-content: center; gap: 10px;';
+                loader.innerHTML = `<svg width="20" height="20" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="color: var(--text-color);"><style>.spinner_V8m1{transform-origin:center;animation:spinner_zKoa 2s linear infinite}.spinner_V8m1 circle{stroke-linecap:round;animation:spinner_YpZS 1.5s ease-in-out infinite}@keyframes spinner_zKoa{100%{transform:rotate(360deg)}}@keyframes spinner_YpZS{0%{stroke-dasharray:0 150;stroke-dashoffset:0}47.5%{stroke-dasharray:42 150;stroke-dashoffset:-16}95%,100%{stroke-dasharray:42 150;stroke-dashoffset:-59}}</style><g class="spinner_V8m1"><circle cx="12" cy="12" r="9.5" fill="none" stroke-width="3"></circle></g></svg><span>Fetching music...</span>`;
+                targetContainer.appendChild(loader);
+                loader.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        } else {
+            if (existingLoader) existingLoader.remove();
+        }
 
         // --- tidal variables ---
         let tidalClientId = '';
@@ -2793,11 +2820,14 @@ async function startRadio(type, query) {
 }
 
 async function appendRadioTracks() {
+    if (isFetchingQueue) return; // Prevent multiple triggers
+    isFetchingQueue = true;
+    toggleQueueLoading(true);
+
     const query = radioSeed.query;
     
-    // 4. Feature: Endless Generation
-    // Use a larger random range. If previous attempts failed, try a fallback genre.
-    let offset = Math.floor(Math.random() * 250); 
+    // 1. Randomness: Use a much larger offset range
+    let offset = Math.floor(Math.random() * 500); 
     let searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(query)}&limit=50&offset=${offset}`;
 
     try {
@@ -2805,49 +2835,86 @@ async function appendRadioTracks() {
         let data = await res.json();
         let rawItems = (data.data || data).items || [];
 
-        // Fallback: If strict search yields nothing (end of list), try a random genre to keep music playing
+        // Fallback: If strict search yields nothing, pivot to a random genre
         if (rawItems.length === 0) {
             console.log("Radio seed exhausted, pivoting to random genre...");
             const randomGenre = GENRES[Math.floor(Math.random() * GENRES.length)];
-            offset = Math.floor(Math.random() * 100);
+            offset = Math.floor(Math.random() * 200);
             searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(randomGenre)}&limit=50&offset=${offset}`;
             res = await fetch(searchUrl);
             data = await res.json();
             rawItems = (data.data || data).items || [];
         }
         
-        let newTracks = rawItems.map(track => ({
-            id: track.id,
-            name: track.title, // Ensure exact property mapping
-            artist: track.artist.name || "Unknown Artist",
-            album: track.album.title || "Unknown Album",
-            albumArt: getHighResArtwork(track.album.cover),
-            storage: 'tidal',
-            duration: track.duration,
-            audioQuality: track.audioQuality,
-            vibrantColor: track.album.vibrantColor
-        }));
+        let newTracks = rawItems.map(track => {
+            // Robust checks for nested artist/album objects to prevent missing metadata
+            const safeArtist = (track.artist && track.artist.name) ? track.artist.name : (track.artist || "Unknown Artist");
+            const safeAlbum = (track.album && track.album.title) ? track.album.title : (track.album || "Unknown Album");
+            const safeCover = (track.album && track.album.cover) ? track.album.cover : null;
+            const safeColor = (track.album && track.album.vibrantColor) ? track.album.vibrantColor : null;
+
+            return {
+                id: track.id,
+                name: track.title || "Unknown Title",
+                artist: safeArtist,
+                album: safeAlbum,
+                albumArt: getHighResArtwork(safeCover),
+                storage: 'tidal',
+                duration: track.duration,
+                audioQuality: track.audioQuality,
+                vibrantColor: safeColor
+            };
+        });
         
-        // 5. Feature: Filter duplicates
-        const existingIds = new Set(playQueue.map(s => s.id));
-        newTracks = newTracks.filter(t => !existingIds.has(t.id));
-        
-        // Shuffle the new batch thoroughly
+        // Shuffle BEFORE filtering to ensure variety
         shuffleArray(newTracks);
+
+        // Deduplication against session history
+        const currentQueueIds = new Set(playQueue.map(s => s.id));
+        newTracks = newTracks.filter(t => !currentQueueIds.has(t.id) && !sessionPlayedIds.has(t.id));
         
+        // Relaxed Deduplication: If strict filtering killed all results, allow session repeats but NOT queue repeats
+        if (newTracks.length === 0 && rawItems.length > 0) {
+             console.log("Relaxing filter to allow session repeats in Radio...");
+             // Re-map the raw items
+             newTracks = rawItems.map(track => {
+                const safeArtist = (track.artist && track.artist.name) ? track.artist.name : (track.artist || "Unknown Artist");
+                const safeAlbum = (track.album && track.album.title) ? track.album.title : (track.album || "Unknown Album");
+                return {
+                    id: track.id,
+                    name: track.title || "Unknown Title",
+                    artist: safeArtist,
+                    album: safeAlbum,
+                    albumArt: getHighResArtwork(track.album ? track.album.cover : null),
+                    storage: 'tidal',
+                    duration: track.duration,
+                    audioQuality: track.audioQuality,
+                    vibrantColor: track.album ? track.album.vibrantColor : null
+                };
+             }).filter(t => !currentQueueIds.has(t.id));
+             shuffleArray(newTracks);
+        }
+
         if (newTracks.length > 0) {
             playQueue.push(...newTracks);
             if (isPanelVisible && panelContent === 'queue') renderQueue();
         } else {
-            // Safety valve: if still no tracks, try again recursively with a generic query
-            if (!query.includes("top")) {
-                radioSeed.query = "top hits"; 
-                appendRadioTracks();
+            // Recursive retry with broader term if completely dry
+            if (!query.includes("mix")) {
+                console.log("Retrying with broader query...");
+                isFetchingQueue = false; // Reset lock for recursion
+                toggleQueueLoading(false); // Reset loader for recursion
+                radioSeed.query = "mix"; 
+                await appendRadioTracks();
+                return; // Exit current stack
             }
         }
         
     } catch (e) {
         console.error("Radio fetch failed", e);
+    } finally {
+        isFetchingQueue = false;
+        toggleQueueLoading(false);
     }
 }
 
@@ -5303,7 +5370,8 @@ async function renderOfflinetidalView() {
 async function rendertidalPage() {
     const searchContainer = document.getElementById('tidal-search-container');
     const offlineSearchContainer = document.getElementById('tidal-offline-search-container');
-    const filterContainer = document.getElementById('tidal-filter-container');
+    const filterContainer = document.getElementById('tidal-filter-container'); // Inner container
+    const controlsWrapper = document.getElementById('tidal-controls'); // The main wrapper
     const browseContainer = document.getElementById('tidal-browse-container');
     const resultsGrid = document.getElementById('tidal-results-grid');
     const input = document.getElementById('tidalSearchInput');
@@ -5311,25 +5379,29 @@ async function rendertidalPage() {
     if (istidalOfflineMode) {
         searchContainer.style.display = 'none';
         offlineSearchContainer.style.display = 'flex';
-        filterContainer.style.display = 'none';
+        // Show controls in offline mode to allow filtering cached songs
+        if(controlsWrapper) controlsWrapper.style.display = 'flex';
+        if(filterContainer) filterContainer.style.display = 'none'; // Hide specific online filters
         browseContainer.style.display = 'none';
         document.getElementById('tidalOfflineToggle').classList.add('active');
         renderOfflinetidalView();
     } else {
         searchContainer.style.display = 'block';
         offlineSearchContainer.style.display = 'none';
-        filterContainer.style.display = 'flex';
         document.getElementById('tidalOfflineToggle').classList.remove('active');
         document.getElementById('tidalOfflineSearchInput').value = '';
         
-        // 8. Feature: Discover Landing Page (Categories & Charts)
+        // Logic for Discover Landing vs Search Results
         if (!input.value.trim()) {
             resultsGrid.style.display = 'none';
             browseContainer.style.display = 'block';
+            if(controlsWrapper) controlsWrapper.style.display = 'none'; // Hide controls when browsing
             renderDiscoverBrowse();
         } else {
             browseContainer.style.display = 'none';
             resultsGrid.style.display = 'grid';
+            if(controlsWrapper) controlsWrapper.style.display = 'flex'; // Show controls when searching
+            if(filterContainer) filterContainer.style.display = 'flex';
             rendertidalSearchResults();
         }
     }
@@ -5593,36 +5665,58 @@ function setPlayerLoadingState(isLoading, song = null) {
 }
 
 async function generateAutoplaySongs() {
-    removeAutoplaySongs(); // Always start with a clean slate
+    if (isFetchingQueue) return;
+    isFetchingQueue = true;
+    toggleQueueLoading(true); // Show spinner at bottom of queue
 
-    const lastSong = playQueue.length > 0 ? playQueue[playQueue.length - 1] : null;
-    if (!lastSong || !lastSong.artist) return;
+    removeAutoplaySongs(); 
+
+    const lastSong = playQueue.length > 0 ? playQueue[playQueue.length - 1] : (currentlyPlayingSong || null);
+    if (!lastSong || !lastSong.artist) {
+        isFetchingQueue = false;
+        toggleQueueLoading(false);
+        return;
+    }
 
     try {
-        const response = await fetch(`${hifiApiBaseUrl}/search/?s=${encodeURIComponent(lastSong.artist)}&limit=20`);
+        const response = await fetch(`${hifiApiBaseUrl}/search/?s=${encodeURIComponent(lastSong.artist)}&limit=50`);
         if (!response.ok) throw new Error("Autoplay search failed");
         
         const data = await response.json();
-        const potentialTracks = data.items || [];
+        const potentialTracks = (data.data || data).items || [];
         
-        const queueIds = new Set(playQueue.map(s => s.id));
+        shuffleArray(potentialTracks);
+
+        const currentQueueIds = new Set(playQueue.map(s => s.id));
+        
         const recommendations = potentialTracks
-            .filter(track => track && track.id && !queueIds.has(track.id))
+            .filter(track => {
+                if (!track || !track.id) return false;
+                if (currentQueueIds.has(track.id)) return false;
+                if (sessionPlayedIds.has(track.id)) return false; // Strict session dedup
+                return true;
+            })
             .map(track => ({
                 id: track.id,
                 name: track.title,
-                artist: track.artist.name,
-                album: track.album.title,
-                albumArt: getHighResArtwork(track.album.cover),
+                artist: (track.artist && track.artist.name) ? track.artist.name : track.artist,
+                album: (track.album && track.album.title) ? track.album.title : track.album,
+                albumArt: getHighResArtwork(track.album ? track.album.cover : null),
                 storage: 'tidal',
                 duration: track.duration,
                 audioQuality: track.audioQuality,
-                vibrantColor: track.album.vibrantColor
-            }));
+                vibrantColor: track.album ? track.album.vibrantColor : null
+            }))
+            .slice(0, 20);
 
         if (recommendations.length > 0) {
             recommendations.forEach(song => autoplaySongIds.add(song.id));
             playQueue.push(...recommendations);
+        } else {
+            // Fallback to broader search if strict dedup fails
+            console.log("Autoplay strict dedup exhausted, trying similar...");
+            const fallbackRes = await fetch(`${hifiApiBaseUrl}/search/?s=similar%20to%20${encodeURIComponent(lastSong.artist)}&limit=20`);
+            // ... (Simple processing for fallback could be added here if desired)
         }
         
         if (isPanelVisible && panelContent === 'queue') {
@@ -5631,6 +5725,9 @@ async function generateAutoplaySongs() {
 
     } catch (e) {
         console.error("Autoplay generation failed:", e);
+    } finally {
+        isFetchingQueue = false;
+        toggleQueueLoading(false);
     }
 }
 
@@ -5853,6 +5950,7 @@ async function playSong(song, playContext = null) {
         }
 
         currentSongId = song.id;
+        sessionPlayedIds.add(song.id);
         currentQueueIndex = playQueue.findIndex(s => s.id === currentSongId);
         
         updatePlayerUI(song);
@@ -8428,19 +8526,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             const val = tidalSearchInput.value.trim();
             const browseContainer = document.getElementById('tidal-browse-container');
             const resultsGrid = document.getElementById('tidal-results-grid');
+            const controlsWrapper = document.getElementById('tidal-controls');
 
-            // Toggle views based on input
             if (!val) {
                 if (browseContainer) browseContainer.style.display = 'block';
                 if (resultsGrid) resultsGrid.style.display = 'none';
-                renderDiscoverBrowse(); // Ensure genres are shown
+                if (controlsWrapper) controlsWrapper.style.display = 'none'; // Hide
+                renderDiscoverBrowse();
                 return;
             } else {
                 if (browseContainer) browseContainer.style.display = 'none';
                 if (resultsGrid) resultsGrid.style.display = 'grid';
+                if (controlsWrapper) controlsWrapper.style.display = 'flex'; // Show
             }
 
-            // Perform search
             clearTimeout(tidalSearchTimeout);
             tidalSearchTimeout = setTimeout(searchtidal, 300);
         });
