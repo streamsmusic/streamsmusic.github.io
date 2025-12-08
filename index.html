@@ -2779,8 +2779,8 @@ function renderRadioPage() {
         return `
         <div class="item-card" onclick="startRadio('artist', '${sanitize(artist)}')">
             <div style="position: relative;">
-                <img src="${song.albumArt}" class="item-card-art" style="border-radius: 50%;">
-                <div style="position: absolute; bottom: 5px; right: 5px; background: var(--text-color); color: var(--background-color); border-radius: 50%; padding: 5px;">
+                <img src="${song.albumArt}" class="item-card-art" style="border-radius: 50%; corner-shape: round;">
+                <div style="position: absolute; bottom: 5px; right: 5px; background: var(--text-color); color: var(--background-color); border-radius: 50%; padding: 20px;">
                     <span class="material-symbols-rounded" style="font-size: 20px; display:block;">radio</span>
                 </div>
             </div>
@@ -2934,7 +2934,7 @@ async function appendRadioTracks() {
                     resultsGrid.className = 'item-grid';
                     resultsHtml = lasttidalSearchResults.map(artist => `
                         <div class="item-card" data-artist-id="${artist.id}" data-artist-name="${sanitize(artist.name)}">
-                            <img src="${getHighResArtwork(artist.picture, 320)}" class="item-card-art" style="border-radius: 50%;">
+                            <img src="${getHighResArtwork(artist.picture, 320)}" class="item-card-art" style="border-radius: 50%; corner-shape: round;">
                             <div class="item-card-info" style="text-align: center;"><div class="item-card-title">${sanitize(artist.name)}</div></div>
                         </div>`).join('');
                     break;
@@ -4819,7 +4819,7 @@ function renderLibraryPage() {
             
             itemsHtml = artistsList.map(([artist, art]) => `
                 <div class="item-card" data-artist-name="${artist}">
-                    <img src="${art || generateRandomGradient()}" alt="${artist}" class="item-card-art" style="border-radius: 50%;">
+                    <img src="${art || generateRandomGradient()}" alt="${artist}" class="item-card-art" style="border-radius: 50%; corner-shape: round;">
                     <div class="item-card-info" style="text-align: center;">
                         <div class="item-card-title">${sanitize(artist)}</div>
                     </div>
