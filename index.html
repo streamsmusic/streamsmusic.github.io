@@ -5899,11 +5899,12 @@ function toggletidalTab() {
                 const response = await fetch(searchUrl, { signal });
                 if (!response.ok) throw new Error(`API request failed: ${response.statusText}`);
                 
-                const data = await response.json();
-                let newItems = [];
-                let totalItems = 0;
+                const responseData = await response.json();
+                const data = responseData.data || {};
+                const totalItems = data.totalNumberOfItems || 0;
                 const rawItems = data.items || [];
-
+                let newItems = [];
+    
                 switch (tidalFilter) {
                     case 'artists':
                         const artistsMap = new Map();
@@ -5917,7 +5918,6 @@ function toggletidalTab() {
                             }
                         });
                         newItems = Array.from(artistsMap.values());
-                        totalItems = newItems.length;
                         break;
                     case 'albums':
                         const albumsMap = new Map();
@@ -5927,12 +5927,10 @@ function toggletidalTab() {
                             }
                         });
                         newItems = Array.from(albumsMap.values());
-                        totalItems = newItems.length;
                         break;
                     case 'tracks':
                     default:
                         newItems = rawItems;
-                        totalItems = data.totalNumberOfItems || 0;
                         break;
                 }
 
