@@ -2766,7 +2766,7 @@ function renderRadioPage() {
     // 1. Feature: Create radio stations from user's top artists
     // Use a Set to get unique artists from the library
     const libraryArtists = [...new Set(songs.map(s => s.artist).filter(Boolean))];
-    const suggestions = shuffleArray(libraryArtists).slice(0, 8);
+    const suggestions = shuffleArray(libraryArtists).slice(0, 16);
 
     if (suggestions.length === 0) {
         grid.innerHTML = `<div class="no-results"><p>Own some songs to get personalized stations.</p></div>`;
