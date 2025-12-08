@@ -2083,7 +2083,7 @@
     <div id="radio-view" class="view-container" style="display: none;">
         <div class="page-content-wrapper">
             <div class="search-container" style="position: absolute; width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
-                <span class="material-symbols-rounded search-icon" style="padding-left: 2px;">search</span>
+                <span class="material-symbols-rounded search-icon" style="padding-left: 2px;">play_circle</span>
                 <input type="text" id="radioSearchInput" placeholder="Start a station" class="library-search-input" style="box-shadow: var(--sun-shadow), 0 0 15px rgba(0, 0, 0, 0.05); padding: 12px 17px 12px 42px;">
             </div>
             
@@ -5655,6 +5655,23 @@ function setPlayerLoadingState(isLoading, song = null) {
         if (song) {
             updatePlayerUI(song);
             updateMiniplayerUI(song, 'loading');
+            
+            // ** NEW: Immediately update external sessions **
+            updateMediaSessionMetadata(song); // Trigger async metadata update
+            
+            // Register session immediately so keys work while loading
+            let artworkSrc = song.albumArt;
+            // Quick check for high-res URL to use as placeholder
+            if(artworkSrc && artworkSrc.includes('resources.tidal.com')) {
+               artworkSrc = artworkSrc.replace(/\/\d+x\d+\.jpg$/, '/320x320.jpg');
+            }
+            Gurasuraisu.registerMediaSession(
+                { title: song.name, artist: song.artist, artwork: [{ src: artworkSrc }] },
+                ['playPause', 'next', 'prev']
+            );
+            
+            // Tell OS we are "playing" (loading) so the widget appears instantly
+            Gurasuraisu.updatePlaybackState({ playbackState: 'playing' }); 
         }
         playPauseIcon.innerHTML = loadingSVG;
         const miniplayerPlayBtn = document.getElementById('miniplayer-play-btn');
@@ -5897,13 +5914,14 @@ async function playSong(song, playContext = null) {
     }
     
     isPlayerLoading = true;
+    setPlayerLoadingState(true, song); 
 
     try {
         audioPlayer.pause();
         lastActiveTimestamp = -1;
         song.hasBeenLogged = false;
         currentlyPlayingSong = song;
-
+        
         const isHlsStream = song.streamUrl && song.streamUrl.includes('.m3u8');
 
         if (hls) {
@@ -5955,10 +5973,6 @@ async function playSong(song, playContext = null) {
         currentSongId = song.id;
         sessionPlayedIds.add(song.id);
         currentQueueIndex = playQueue.findIndex(s => s.id === currentSongId);
-        
-        updatePlayerUI(song);
-        updateMiniplayerUI(song, 'paused');
-        await updateMediaSessionMetadata(song);
 
         let base64Artwork = song.albumArt;
         try {
@@ -5966,11 +5980,6 @@ async function playSong(song, playContext = null) {
         } catch (e) {
             console.warn("Artwork conversion failed", e);
         }
-
-        Gurasuraisu.registerMediaSession(
-            { title: song.name, artist: song.artist, artwork: [{ src: base64Artwork }] },
-            ['playPause', 'next', 'prev']
-        );
 
         if (isPanelVisible) {
             if (panelContent === 'lyrics') {
