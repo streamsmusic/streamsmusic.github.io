@@ -2838,7 +2838,7 @@ async function appendRadioTracks() {
     
     // 1. Randomness: Use a much larger offset range
     let offset = Math.floor(Math.random() * 500); 
-    let searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(query)}&limit=50&offset=${offset}`;
+    let searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(query)}&offset=${offset}`;
 
     try {
         let res = await fetch(searchUrl);
@@ -2850,7 +2850,7 @@ async function appendRadioTracks() {
             console.log("Radio seed exhausted, pivoting to random genre...");
             const randomGenre = GENRES[Math.floor(Math.random() * GENRES.length)];
             offset = Math.floor(Math.random() * 200);
-            searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(randomGenre)}&limit=50&offset=${offset}`;
+            searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(randomGenre)}&offset=${offset}`;
             res = await fetch(searchUrl);
             data = await res.json();
             rawItems = (data.data || data).items || [];
@@ -6267,7 +6267,7 @@ function toggletidalTab() {
                 tidalSearchOffset += 50;
             }
 
-            const searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(query)}&limit=50&offset=${tidalSearchOffset}`;
+            const searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(query)}&offset=${tidalSearchOffset}`;
 
             try {
                 const response = await fetch(searchUrl, { signal });
