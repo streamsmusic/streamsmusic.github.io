@@ -2547,16 +2547,23 @@
         const tidal_CACHE_LIMIT = 200 * 1024 * 1024; // 200MB
         let localSongLookup = new Map();
         let isrcToLocalSongMap = new Map()
-        let hifiApiBaseUrl = "https://wolf.qqdl.site"; // Default fallback
+        let hifiApiBaseUrl = "https://aether.squid.wtf"; // Default fallback
         let isRadioMode = false;
         let radioSeed = null; // { type: 'artist'|'track', query: '...' }
         const GENRES = ["Pop", "Hip-Hop", "R&B", "Electronic", "Rock", "Indie", "K-Pop", "J-Pop", "Classical", "Jazz", "Metal", "Alternative", "Country"];
         const hifiApiEndpoints = [
+            "https://aether.squid.wtf",
+            "https://zeus.squid.wtf",
+            "https://kraken.squid.wtf",
             "https://wolf.qqdl.site",
             "https://maus.qqdl.site",
             "https://vogel.qqdl.site",
             "https://katze.qqdl.site",
-            "https://hund.qqdl.site"
+            "https://hund.qqdl.site",
+            "https://phoenix.squid.wtf",
+            "https://shiva.squid.wtf",
+            "https://chaos.squid.wtf",
+            "https://tidal.kinoplus.online"
         ];
 
         // --- LRCLIB variables ---
