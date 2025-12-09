@@ -2574,7 +2574,7 @@
                 const timeoutId = setTimeout(() => controller.abort(), 2000); // 2-second timeout
                 const startTime = performance.now();
                 try {
-                    await fetch(`${endpoint}/search/?s=`, { signal: controller.signal });
+                    await fetch(`${endpoint}`, { signal: controller.signal });
                     const endTime = performance.now();
                     clearTimeout(timeoutId);
                     return { endpoint, latency: endTime - startTime };
@@ -2877,7 +2877,7 @@ async function appendRadioTracks() {
     let res = await fetchHifi(searchPath);
     
     try {
-        let res = await fetch(searchUrl);
+        let res = await fetch(searchPath);
         let data = await res.json();
         let rawItems = (data.data || data).items || [];
 
