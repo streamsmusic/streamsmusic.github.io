@@ -1,8 +1,15 @@
 # API: https://github.com/sachinsenal0x64/hifi
 
 Full API list:
-* "https://wolf.qqdl.site"
-* "https://maus.qqdl.site"
-* "https://vogel.qqdl.site"
-* "https://katze.qqdl.site"
-* "https://hund.qqdl.site"
+* "https://aether.squid.wtf",
+* "https://zeus.squid.wtf",
+* "https://kraken.squid.wtf",
+* "https://wolf.qqdl.site",
+* "https://maus.qqdl.site",
+* "https://vogel.qqdl.site",
+* "https://katze.qqdl.site",
+* "https://hund.qqdl.site",
+* "https://phoenix.squid.wtf",
+* "https://shiva.squid.wtf",
+* "https://chaos.squid.wtf",
+* "https://tidal.kinoplus.online"
