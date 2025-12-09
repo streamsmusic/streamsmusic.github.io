@@ -1,3 +1,7 @@
+# Streams (Music)
+
+⚠️ This project is not affiliated with Polygol
+
 We do not encourage piracy. This project is made purely for educational and personal use, intended only for listening, not for exporting. If you somehow export copyrighted content, you are solely responsible for complying with the relevant laws in your country.
 
 The HiFi Project and Streams assumes no responsibility for any misuse or legal violations arising from the use of this project.
