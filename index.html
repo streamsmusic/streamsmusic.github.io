@@ -2550,7 +2550,6 @@
         let isRadioMode = false;
         let radioSeed = null; // { type: 'artist'|'track', query: '...' }
         const GENRES = ["Pop", "Hip-Hop", "R&B", "Electronic", "Rock", "Indie", "K-Pop", "J-Pop", "Classical", "Jazz", "Metal", "Alternative", "Country"];
-        let sortedApiEndpoints = [...hifiApiEndpoints]; // Default to unsorted list
         let currentEndpointIndex = 0;
         let hifiApiBaseUrl = "https://tidal.kinoplus.online"; // Default fallback
         const hifiApiEndpoints = [
@@ -2567,6 +2566,7 @@
             "https://chaos.squid.wtf",
             "https://tidal.kinoplus.online"
         ];
+        let sortedApiEndpoints = [...hifiApiEndpoints]; // Default to unsorted list
 
         async function findFastestHifiEndpoint() {
             const promises = hifiApiEndpoints.map(async (endpoint) => {
