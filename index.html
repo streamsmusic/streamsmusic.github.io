@@ -2877,7 +2877,7 @@ async function appendRadioTracks() {
     let res = await fetchHifi(searchPath);
     
     try {
-        let res = await fetch(searchPath);
+        let res = await fetchHifi(searchPath);
         let data = await res.json();
         let rawItems = (data.data || data).items || [];
 
