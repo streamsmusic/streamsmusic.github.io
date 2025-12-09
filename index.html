@@ -2546,11 +2546,13 @@
         let currentDrawerContext = []; // To store full objects for drawer context
         const tidal_CACHE_LIMIT = 200 * 1024 * 1024; // 200MB
         let localSongLookup = new Map();
-        let isrcToLocalSongMap = new Map()
-        let hifiApiBaseUrl = "https://aether.squid.wtf"; // Default fallback
+        let isrcToLocalSongMap = new Map();
         let isRadioMode = false;
         let radioSeed = null; // { type: 'artist'|'track', query: '...' }
         const GENRES = ["Pop", "Hip-Hop", "R&B", "Electronic", "Rock", "Indie", "K-Pop", "J-Pop", "Classical", "Jazz", "Metal", "Alternative", "Country"];
+        let sortedApiEndpoints = [...hifiApiEndpoints]; // Default to unsorted list
+        let currentEndpointIndex = 0;
+        let hifiApiBaseUrl = "https://tidal.kinoplus.online"; // Default fallback
         const hifiApiEndpoints = [
             "https://aether.squid.wtf",
             "https://zeus.squid.wtf",
@@ -2565,6 +2567,68 @@
             "https://chaos.squid.wtf",
             "https://tidal.kinoplus.online"
         ];
+
+        async function findFastestHifiEndpoint() {
+            const promises = hifiApiEndpoints.map(async (endpoint) => {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 2000); // 2-second timeout
+                const startTime = performance.now();
+                try {
+                    await fetch(`${endpoint}/search/?s=`, { signal: controller.signal });
+                    const endTime = performance.now();
+                    clearTimeout(timeoutId);
+                    return { endpoint, latency: endTime - startTime };
+                } catch (error) {
+                    clearTimeout(timeoutId);
+                    return { endpoint, latency: Infinity };
+                }
+            });
+
+            const results = await Promise.all(promises);
+            
+            // Sort by latency (lowest first)
+            const validResults = results.filter(r => r.latency !== Infinity).sort((a, b) => a.latency - b.latency);
+            
+            if (validResults.length > 0) {
+                console.log(`Fastest Hi-Fi endpoint: ${validResults[0].endpoint} (${validResults[0].latency.toFixed(2)}ms)`);
+                sortedApiEndpoints = validResults.map(r => r.endpoint);
+                hifiApiBaseUrl = sortedApiEndpoints[0];
+                currentEndpointIndex = 0;
+            } else {
+                console.warn("No responsive Hi-Fi endpoints found, using default order.");
+            }
+        }
+
+        // Wrapper to fetch from HiFi API with automatic failover
+        async function fetchHifi(path, options = {}, retries = 0) {
+            try {
+                const url = `${hifiApiBaseUrl}${path}`;
+                const response = await fetch(url, options);
+                
+                // If 5xx Server Error or 429 Too Many Requests, throw to trigger failover
+                if (!response.ok && (response.status >= 500 || response.status === 429)) {
+                    throw new Error(`API Error ${response.status}`);
+                }
+                
+                return response;
+            } catch (err) {
+                // Don't retry if the user cancelled the action (AbortError)
+                if (err.name === 'AbortError') throw err;
+        
+                // If we haven't tried all servers yet, switch and retry
+                if (retries < sortedApiEndpoints.length - 1) {
+                    currentEndpointIndex = (currentEndpointIndex + 1) % sortedApiEndpoints.length;
+                    hifiApiBaseUrl = sortedApiEndpoints[currentEndpointIndex];
+                    console.warn(`API Error (${err.message}). Switching to: ${hifiApiBaseUrl}`);
+                    
+                    return fetchHifi(path, options, retries + 1);
+                }
+                
+                // If all servers failed, throw the final error
+                console.error("All API endpoints failed.");
+                throw err;
+            }
+        }
 
         // --- LRCLIB variables ---
         let isLrclibEnabled = false;
@@ -2589,35 +2653,6 @@
                 [array[i], array[j]] = [array[j], array[i]];
             }
             return array;
-        }
-
-        async function findFastestHifiEndpoint() {
-            const promises = hifiApiEndpoints.map(async (endpoint) => {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 2000); // 2-second timeout
-                const startTime = performance.now();
-                try {
-                    // Use a common, lightweight endpoint for pinging, like search with an empty query
-                    await fetch(`${endpoint}/search/?s=`, { signal: controller.signal });
-                    const endTime = performance.now();
-                    clearTimeout(timeoutId);
-                    return { endpoint, latency: endTime - startTime };
-                } catch (error) {
-                    clearTimeout(timeoutId);
-                    return { endpoint, latency: Infinity };
-                }
-            });
-
-            const results = await Promise.all(promises);
-            results.sort((a, b) => a.latency - b.latency);
-
-            const fastest = results.find(r => r.latency !== Infinity);
-            if (fastest) {
-                console.log(`Fastest Hi-Fi endpoint is ${fastest.endpoint} with ${fastest.latency.toFixed(2)}ms latency.`);
-                hifiApiBaseUrl = fastest.endpoint;
-            } else {
-                console.warn("No responsive Hi-Fi endpoints found, using default fallback.");
-            }
         }
 
 function openDrawer(title, subtitle, contentHtml, context = {}) {
@@ -2838,8 +2873,9 @@ async function appendRadioTracks() {
     
     // 1. Randomness: Use a much larger offset range
     let offset = Math.floor(Math.random() * 500); 
-    let searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(query)}&offset=${offset}`;
-
+    let searchPath = `/search/?s=${encodeURIComponent(query)}&limit=50&offset=${offset}`;
+    let res = await fetchHifi(searchPath);
+    
     try {
         let res = await fetch(searchUrl);
         let data = await res.json();
@@ -2850,8 +2886,8 @@ async function appendRadioTracks() {
             console.log("Radio seed exhausted, pivoting to random genre...");
             const randomGenre = GENRES[Math.floor(Math.random() * GENRES.length)];
             offset = Math.floor(Math.random() * 200);
-            searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(randomGenre)}&offset=${offset}`;
-            res = await fetch(searchUrl);
+            searchPath = `/search/?s=${encodeURIComponent(randomGenre)}&limit=50&offset=${offset}`;
+            res = await fetchHifi(searchPath);
             data = await res.json();
             rawItems = (data.data || data).items || [];
         }
@@ -5428,7 +5464,7 @@ async function renderDiscoverBrowse() {
     if (trendingGrid.innerHTML === '') {
         // Fetch "Trending" (Just a search for 'top hits' as proxy)
         try {
-            const res = await fetch(`${hifiApiBaseUrl}/search/?s=top%20hits&limit=8`);
+            const res = await fetchHifi(`/search/?s=top%20hits&limit=8`);
             const data = await res.json();
             const items = (data.data || data).items || [];
             trendingGrid.innerHTML = items.map(track => `
@@ -5704,7 +5740,7 @@ async function generateAutoplaySongs() {
     }
 
     try {
-        const response = await fetch(`${hifiApiBaseUrl}/search/?s=${encodeURIComponent(lastSong.artist)}&limit=50`);
+        const response = await fetchHifi(`/search/?s=${encodeURIComponent(lastSong.artist)}&limit=50`);
         if (!response.ok) throw new Error("Autoplay search failed");
         
         const data = await response.json();
@@ -5740,7 +5776,7 @@ async function generateAutoplaySongs() {
         } else {
             // Fallback to broader search if strict dedup fails
             console.log("Autoplay strict dedup exhausted, trying similar...");
-            const fallbackRes = await fetch(`${hifiApiBaseUrl}/search/?s=similar%20to%20${encodeURIComponent(lastSong.artist)}&limit=20`);
+            const fallbackRes = await fetchHifi(`/search/?s=similar%20to%20${encodeURIComponent(lastSong.artist)}&limit=20`);
             // ... (Simple processing for fallback could be added here if desired)
         }
         
@@ -6267,10 +6303,10 @@ function toggletidalTab() {
                 tidalSearchOffset += 50;
             }
 
-            const searchUrl = `${hifiApiBaseUrl}/search/?s=${encodeURIComponent(query)}&offset=${tidalSearchOffset}`;
+            const path = `/search/?s=${encodeURIComponent(query)}&limit=50&offset=${tidalSearchOffset}`;
 
             try {
-                const response = await fetch(searchUrl, { signal });
+                const response = await fetchHifi(path, { signal });
                 if (!response.ok) throw new Error(`API request failed: ${response.statusText}`);
                 
                 const responseData = await response.json();
@@ -6465,7 +6501,7 @@ async function openArtistView(artistId, artistName) {
     openDrawer(artistName, "Loading content...", `<div class="loading-message"><svg width="24" height="24" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="color: var(--text-color);"><style>.spinner_V8m1{transform-origin:center;animation:spinner_zKoa 2s linear infinite}.spinner_V8m1 circle{stroke-linecap:round;animation:spinner_YpZS 1.5s ease-in-out infinite}@keyframes spinner_zKoa{100%{transform:rotate(360deg)}}@keyframes spinner_YpZS{0%{stroke-dasharray:0 150;stroke-dashoffset:0}47.5%{stroke-dasharray:42 150;stroke-dashoffset:-16}95%,100%{stroke-dasharray:42 150;stroke-dashoffset:-59}}</style><g class="spinner_V8m1"><circle cx="12" cy="12" r="9.5" fill="none" stroke-width="3"></circle></g></svg></div>`);
 
     try {
-        const response = await fetch(`${hifiApiBaseUrl}/artist/?f=${artistId}`);
+        const response = await fetchHifi(`/artist/?f=${artistId}`);
         if (!response.ok) throw new Error('Failed to fetch artist content');
         
         const data = await response.json();
@@ -6554,7 +6590,7 @@ async function openAlbumView(albumId, albumName, artistName) {
 
     try {
         // FIX: Use the direct album endpoint to get its tracks.
-        const response = await fetch(`${hifiApiBaseUrl}/album/?id=${albumId}`);
+        const response = await fetchHifi(`/album/?id=${albumId}`);
         if (!response.ok) throw new Error('Failed to fetch album tracks');
         
         const responseData = await response.json();
@@ -6883,10 +6919,9 @@ async function processAndCacheAudio(songObject, signal = null) {
         console.log(`Attempting to fetch via /track endpoint for "${songObject.name}"...`);
         for (const quality of qualityLevelsToTry) {
             if (concatenatedBlob) break;
-            const trackUrl = `${hifiApiBaseUrl}/track/?id=${songObject.id}&quality=${quality}`;
             try {
                 // PASS SIGNAL HERE
-                const response = await fetch(trackUrl, { signal });
+                const response = await fetchHifi(`/track/?id=${songObject.id}&quality=${quality}`, { signal });
                 if (response.ok) {
                     const responseData = await response.json();
                     const data = responseData.data || {};
@@ -6918,10 +6953,9 @@ async function processAndCacheAudio(songObject, signal = null) {
             console.log(`All /track attempts failed. Trying /dash endpoint...`);
             for (const quality of qualityLevelsToTry) {
                 if (concatenatedBlob) break;
-                const manifestUrl = `${hifiApiBaseUrl}/dash/?id=${songObject.id}&quality=${quality}`;
                 try {
                     // PASS SIGNAL HERE
-                    const response = await fetch(manifestUrl, { signal });
+                    const response = await fetchHifi(`/dash/?id=${songObject.id}&quality=${quality}`, { signal });
                     if (!response.ok) continue;
 
                     const text = await response.text();
@@ -7309,8 +7343,7 @@ async function removeFolder(folderName) {
         async function fetchLyricsFromHifi(song) {
             if (!song || !song.id) return null;
             try {
-                const url = `${hifiApiBaseUrl}/lyrics/?id=${song.id}`;
-                const response = await fetch(url);
+                const response = await fetchHifi(`/lyrics/?id=${song.id}`);
                 if (!response.ok) {
                     console.warn(`Hifi Lyrics request failed with status: ${response.status}`);
                     return null;
