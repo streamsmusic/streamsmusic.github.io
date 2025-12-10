@@ -8135,6 +8135,22 @@ async function verifyPermission(handle, shouldRequest = false) {
     return false;
 }
 
+async function openContextFromPlayer(type) {
+    if (!currentlyPlayingSong) return;
+    const s = currentlyPlayingSong;
+    
+    // We need to fetch basic info to get IDs if missing (Radio songs flattened metadata)
+    if (s.storage === 'tidal') {
+        // Try to derive IDs or search
+        // This is complex because we flattened metadata. 
+        // Simple fallback: Search for the Artist/Album
+        const query = type === 'artist' ? s.artist : s.album;
+        document.getElementById('tidalSearchInput').value = query;
+        setView('tidal'); // Switch to Discover
+        searchtidal(); // Trigger search
+    }
+}
+        
         function updatePlayerUI(song, progress = 0) {
             // musicTitle.textContent = sanitize(song.name);
             // musicArtist.textContent = song.artist;
