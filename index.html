@@ -5534,14 +5534,9 @@ async function renderDiscoverBrowse() {
     if (searchHistory.length > 0) {
         historyContainer = document.createElement('div');
         historyContainer.id = 'search-history-container';
-        // Insert history AFTER the genre pills
-        if (pillsContainer && pillsContainer.nextSibling) {
-            browseContainer.insertBefore(historyContainer, pillsContainer.nextSibling);
-        } else {
-            browseContainer.appendChild(historyContainer);
-        }
+        browseContainer.appendChild(historyContainer);
 
-        let historyHtml = `<div style="display:flex; gap:10px; margin: 20px 0; flex-wrap:wrap;">`;
+        let historyHtml = `<div style="display:flex; gap:10px; margin-bottom: 20px; flex-wrap:wrap; justify-content: center;">`;
         historyHtml += searchHistory.map(term => 
             `<div class="history-pill" onclick="document.getElementById('tidalSearchInput').value='${sanitize(term)}'; document.getElementById('tidalSearchInput').dispatchEvent(new Event('input'));"><span class="material-symbols-rounded" style="font-size:16px">history</span>${sanitize(term)}</div>`
         ).join('');
