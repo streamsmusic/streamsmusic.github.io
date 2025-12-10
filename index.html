@@ -6858,18 +6858,30 @@ async function batchSaveTidalTracks(tracks) {
 
 async function saveArtistContent(albums, artistName) {
     Gurasuraisu.showPopup(`Saving all albums by ${artistName}...`);
+    
     for (const album of albums) {
         try {
-            const response = await fetch(`${hifiApiBaseUrl}/album/?id=${album.id}`);
+            const response = await fetchHifi(`/album/?id=${album.id}`);
+            
             if (response.ok) {
-                const data = await response.json();
-                const tracks = data[1].items.map(t => t.item);
-                await saveAlbumContent(tracks, album.title, true); // silent=true
+                const responseData = await response.json();
+                
+                // FIX 2: Update parsing to match new API structure (data.data.items)
+                const albumData = responseData.data || {};
+                const items = albumData.items || [];
+                const tracks = items.map(t => t.item);
+                
+                if (tracks.length > 0) {
+                    await saveAlbumContent(tracks, album.title, true); // silent=true
+                } else {
+                    console.warn(`Album "${album.title}" has no tracks.`);
+                }
             }
         } catch (error) {
             console.error(`Failed to fetch tracks for album ${album.title}:`, error);
         }
     }
+    
     Gurasuraisu.showPopup(`Finished saving albums for ${artistName}`);
     renderLibraryPage(); // Refresh the library view
 }
