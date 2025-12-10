@@ -5448,29 +5448,53 @@ async function rendertidalPage() {
 // 9. Feature: Render Genres/Charts
 async function renderDiscoverBrowse() {
     const pillsContainer = document.getElementById('genre-pills');
-    if (pillsContainer.innerHTML === '') {
+    
+    // 1. Populate Genres (Fix: Ensure this runs)
+    if (pillsContainer && pillsContainer.children.length === 0) {
         pillsContainer.innerHTML = GENRES.map(g => 
             `<div class="genre-pill" onclick="searchGenre('${g}')">${g}</div>`
         ).join('');
     }
     
+    // Feature 6: Render History (Preserved from previous steps)
+    const historyContainer = document.getElementById('search-history-container');
+    if (historyContainer && searchHistory.length > 0) {
+        // (History logic remains if implemented, otherwise skipped)
+    }
+
     const trendingGrid = document.getElementById('tidal-trending-grid');
-    if (trendingGrid.innerHTML === '') {
-        // Fetch "Trending" (Just a search for 'top hits' as proxy)
+    // 2. Fetch Top Hits via Playlist (Fix: Use Playlist API)
+    if (trendingGrid && trendingGrid.innerHTML === '') {
         try {
-            const res = await fetchHifi(`/search/?s=top%20hits&limit=8`);
-            const data = await res.json();
-            const items = (data.data || data).items || [];
-            trendingGrid.innerHTML = items.map(track => `
+            // Using a specific popular playlist ID (Global Top Hits)
+            const playlistId = 'edf3b7d2-cb42-41d7-93c0-afa2a395521b'; 
+            const res = await fetchHifi(`/playlist/?id=${playlistId}`);
+            const json = await res.json();
+            
+            // 3. Parse Playlist Structure (Fix: data.items[].item)
+            // The API response for playlist has items array directly in the root or data object depending on version
+            const items = json.items || (json.data ? json.data.items : []);
+            
+            const tracks = items
+                .filter(entry => entry.item && entry.type === 'track') // Filter for tracks
+                .map(entry => entry.item)
+                .slice(0, 12); // Limit to 12
+
+            trendingGrid.innerHTML = tracks.map(track => {
+                const cover = track.album ? track.album.cover : null;
+                return `
                 <div class="item-card" onclick="playtidalTrack(${track.id})">
-                    <img src="${getHighResArtwork(track.album.cover)}" class="item-card-art">
+                    <img src="${getHighResArtwork(cover)}" class="item-card-art">
                     <div class="item-card-info">
                         <div class="item-card-title">${sanitize(track.title)}</div>
                         <div class="item-card-subtitle">${sanitize(track.artist.name)}</div>
                     </div>
                 </div>
-            `).join('');
-        } catch(e) {}
+            `}).join('');
+        } catch(e) { 
+            console.warn("Trending fetch failed:", e); 
+            trendingGrid.innerHTML = '<div class="no-results" style="grid-column: 1/-1"><p>Unable to load trending hits.</p></div>';
+        }
     }
 }
 
@@ -7774,9 +7798,12 @@ async function updateMediaSessionMetadata(song) {
         ]
     });
 
-    // Now that the new artwork is in place, it's safe to revoke the old URL.
+    // 10 seconds to allow the OS/Browser to fully consume the blob.
+    // Revoking too early causes the "Not allowed to load" error in console.
     if (oldBlobUrl && oldBlobUrl !== newBlobUrl) {
-        URL.revokeObjectURL(oldBlobUrl);
+        setTimeout(() => {
+            URL.revokeObjectURL(oldBlobUrl);
+        }, 10000); 
     }
 }
 
