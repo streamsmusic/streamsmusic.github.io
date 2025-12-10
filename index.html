@@ -2165,7 +2165,7 @@
                 <div class="filter-container" id="genre-pills" style="flex-wrap: wrap; justify-content: center; margin-bottom: 20px; gap: 10px;">
                     <!-- Genres injected here -->
                 </div>
-                <h3 class="section-title" style="font-size: 1.2rem;">Trending Now</h3>
+                <h3 class="section-title" style="font-size: 1.2rem;">Popular</h3>
                 <div id="tidal-trending-grid" class="item-grid"></div>
             </div>
             
@@ -5525,24 +5525,34 @@ async function rendertidalPage() {
 
 async function renderDiscoverBrowse() {
     const browseContainer = document.getElementById('tidal-browse-container');
-    const pillsContainer = document.getElementById('genre-pills');
     if (!browseContainer) return;
 
     // 1. Search History
-    if (searchHistory.length > 0) {
-        historyContainer = document.createElement('div');
-        historyContainer.id = 'search-history-container';
-        browseContainer.appendChild(historyContainer);
+    let historyContainer = document.getElementById('search-history-container');
 
+    if (searchHistory.length > 0) {
+        // Create if missing
+        if (!historyContainer) {
+            historyContainer = document.createElement('div');
+            historyContainer.id = 'search-history-container';
+            // FIX: Prepend ensures it is always the FIRST element in the view
+            browseContainer.prepend(historyContainer);
+        }
+
+        // Update content (Overwrites existing HTML, preventing internal duplication)
         let historyHtml = `<div style="display:flex; gap:10px; margin-bottom: 20px; flex-wrap:wrap; justify-content: center;">`;
         historyHtml += searchHistory.map(term => 
             `<div class="history-pill" onclick="document.getElementById('tidalSearchInput').value='${sanitize(term)}'; document.getElementById('tidalSearchInput').dispatchEvent(new Event('input'));"><span class="material-symbols-rounded" style="font-size:16px">history</span>${sanitize(term)}</div>`
         ).join('');
         historyHtml += `</div>`;
         historyContainer.innerHTML = historyHtml;
+    } else if (historyContainer) {
+        // Remove container if history is cleared
+        historyContainer.remove();
     }
     
     // 2. Genres
+    const pillsContainer = document.getElementById('genre-pills');
     if (pillsContainer && pillsContainer.children.length === 0) {
         pillsContainer.innerHTML = GENRES.map(g => 
             `<div class="genre-pill" onclick="searchGenre('${g}')">${g}</div>`
