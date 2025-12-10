@@ -2163,7 +2163,6 @@
             </div>
             
             <div id="tidal-browse-container" style="padding-top: 70px; padding-bottom: 240px; display: none;">
-                <h3 class="section-title" style="font-size: 1.2rem;">Browse Categories</h3>
                 <div class="filter-container" id="genre-pills" style="flex-wrap: wrap; justify-content: flex-start; margin-bottom: 20px;">
                     <!-- Genres injected here -->
                 </div>
@@ -5530,15 +5529,7 @@ async function renderDiscoverBrowse() {
     const browseContainer = document.getElementById('tidal-browse-container');
     if (!browseContainer) return;
 
-    // 1. Genres
-    const pillsContainer = document.getElementById('genre-pills');
-    if (pillsContainer && pillsContainer.children.length === 0) {
-        pillsContainer.innerHTML = GENRES.map(g => 
-            `<div class="genre-pill" onclick="searchGenre('${g}')">${g}</div>`
-        ).join('');
-    }
-    
-    // 2. Search History (Fixed DOM Insertion)
+    // 1. Search History (Fixed DOM Insertion)
     if (searchHistory.length > 0) {
         // Check if container already exists to avoid duplicates
         let historyContainer = document.getElementById('search-history-container');
@@ -5554,12 +5545,20 @@ async function renderDiscoverBrowse() {
             }
         }
 
-        let historyHtml = `<h3 class="section-title" style="font-size: 1.2rem; margin-top:20px;">Recent</h3><div style="display:flex; gap:10px; flex-wrap:wrap;">`;
+        let historyHtml = `<div style="display:flex; gap:10px; margin: 20px 0; flex-wrap:wrap;">`;
         historyHtml += searchHistory.map(term => 
             `<div class="history-pill" onclick="document.getElementById('tidalSearchInput').value='${sanitize(term)}'; document.getElementById('tidalSearchInput').dispatchEvent(new Event('input'));"><span class="material-symbols-rounded" style="font-size:16px">history</span>${sanitize(term)}</div>`
         ).join('');
         historyHtml += `</div>`;
         historyContainer.innerHTML = historyHtml;
+    }
+    
+    // 2. Genres
+    const pillsContainer = document.getElementById('genre-pills');
+    if (pillsContainer && pillsContainer.children.length === 0) {
+        pillsContainer.innerHTML = GENRES.map(g => 
+            `<div class="genre-pill" onclick="searchGenre('${g}')">${g}</div>`
+        ).join('');
     }
 
     // 3. Trending (Populate browseContext)
@@ -5602,7 +5601,7 @@ async function renderDiscoverBrowse() {
             `}).join('');
         } catch(e) { 
             console.warn("Trending fetch failed:", e); 
-            trendingGrid.innerHTML = '<div class="no-results" style="grid-column: 1/-1"><p>Unable to load trending hits.</p></div>';
+            trendingGrid.innerHTML = '<div class="no-results" style="grid-column: 1/-1"><p>Unable to load</p></div>';
         }
     }
 }
