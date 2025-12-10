@@ -567,8 +567,7 @@
             font-weight: bold;
             text-transform: uppercase;
         }
-        .badge.explicit { color: #ff6b6b; border-color: #ff6b6b; border: 1px solid; }
-        .badge.quality { color: #4ecdc4; border-color: #4ecdc4; border: 1px solid; }
+        .badge.explicit { color: var(--background-color); border-color: #ff6b6b }
         
         /* Search History Pills */
         .history-pill {
@@ -3062,7 +3061,6 @@ async function appendRadioTracks() {
                     resultsHtml = lasttidalSearchResults.map(track => {
                         // Feature 5: Badges
                         const explicitBadge = track.explicit ? `<span class="badge explicit">E</span>` : '';
-                        const qualityBadge = (track.audioQuality === 'LOSSLESS' || track.audioQuality === 'HI_RES') ? `<span class="badge quality">M</span>` : '';
                         
                         return `
                         <div class="item-card" data-track-id="${track.id}">
@@ -3070,7 +3068,7 @@ async function appendRadioTracks() {
                             <div class="item-card-info">
                                 <div class="item-card-title">${sanitize(track.title)}</div>
                                 <div class="item-card-subtitle">${sanitize(track.artist.name)}</div>
-                                <div class="meta-badges">${explicitBadge}${qualityBadge}</div>
+                                <div class="meta-badges">${explicitBadge}</div>
                             </div>
                         </div>`;
                     }).join('');
