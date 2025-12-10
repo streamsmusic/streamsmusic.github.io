@@ -501,6 +501,18 @@
             position: relative;
         }
 
+        .music-item.current-track, .item-card.current-track {
+            background-color: var(--secondary-text-color) !important;
+            color: var(--background-color) !important;
+            transition: all 0.3s ease;
+        }
+        .music-item.current-track .song-artist, 
+        .music-item.current-track .album-artist,
+        .music-item.current-track .track-number {
+            color: var(--background-color) !important;
+            opacity: 0.8;
+        }
+
         .queue-item {
             padding: 8px 1px;
             background-color: transparent;
@@ -538,6 +550,37 @@
 
         .queue-item.active .song-title {
             font-family: 'Open Runde';
+        }
+
+        /* Quality/Explicit Badges in lists */
+        .meta-badges {
+            display: flex;
+            gap: 4px;
+            margin-top: 2px;
+        }
+        .badge {
+            font-size: 9px;
+            padding: 1px 4px;
+            border-radius: 4px;
+            background: var(--glass-border);
+            color: var(--secondary-text-color);
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .badge.explicit { color: #ff6b6b; border-color: #ff6b6b; border: 1px solid; }
+        .badge.quality { color: #4ecdc4; border-color: #4ecdc4; border: 1px solid; }
+        
+        /* Search History Pills */
+        .history-pill {
+            padding: 8px 16px;
+            background: var(--search-background);
+            border-radius: 20px;
+            font-size: 14px;
+            cursor: pointer;
+            border: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
             
         .album-art {
@@ -2265,12 +2308,38 @@
             If you enable a third-party service, you agree to the Terms of Service and other polices of that service.
             <div style="display: flex; flex-direction: column; gap: 15px; padding-top: 15px;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <label for="tidalToggle">Enable Streaming with QQDL</label>
+                    <label for="tidalToggle">Enable Streaming (QQDL)</label>
                     <input type="checkbox" id="tidalToggle">
                 </div>
-                
+
+                <!-- Feature 1: Audio Quality Preference -->
+                <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <label for="prefAudioQuality" style="font-size: 14px; color: var(--secondary-text-color);">Streaming Quality</label>
+                    <select id="prefAudioQuality" class="library-search-input" style="padding: 8px 15px;">
+                        <option value="LOSSLESS">Lossless (FLAC)</option>
+                        <option value="HIGH">High (320kbps)</option>
+                        <option value="LOW">Low (96kbps)</option>
+                    </select>
+                </div>
+
+                <!-- Feature 2: Disable Dynamic Cache -->
                 <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <label for="lrclibToggle">Search LRCLIB for missing lyrics</label>
+                    <label for="smartCacheToggle">Smart Pre-Caching</label>
+                    <input type="checkbox" id="smartCacheToggle" checked>
+                </div>
+                <small style="margin-top: -10px; font-size: 12px; color: var(--secondary-text-color);">Pre-load next songs based on listening habits.</small>
+
+                <!-- Feature 3: Stream Only Mode (No IDB) -->
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <label for="streamOnlyToggle">Stream Only Mode</label>
+                    <input type="checkbox" id="streamOnlyToggle">
+                </div>
+                <small style="margin-top: -10px; font-size: 12px; color: var(--secondary-text-color);">Disable disk storage. Songs won't be saved offline.</small>
+                
+                <div class="menu-separator"></div>
+
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <label for="lrclibToggle">Search LRCLIB for lyrics</label>
                     <input type="checkbox" id="lrclibToggle">
                 </div>
             </div>
@@ -2545,6 +2614,10 @@
         let lasttidalSearchResults = []; // To store API results for filtering
         let currentDrawerContext = []; // To store full objects for drawer context
         const tidal_CACHE_LIMIT = 200 * 1024 * 1024; // 200MB
+        let prefAudioQuality = 'LOSSLESS';
+        let enableSmartCache = true;
+        let enableStreamOnly = false;
+        let searchHistory = JSON.parse(localStorage.getItem('searchHistory') || '[]');
         let localSongLookup = new Map();
         let isrcToLocalSongMap = new Map();
         let isRadioMode = false;
@@ -2986,14 +3059,21 @@ async function appendRadioTracks() {
                 case 'tracks':
                 default:
                     resultsGrid.className = 'item-grid';
-                    resultsHtml = lasttidalSearchResults.map(track => `
+                    resultsHtml = lasttidalSearchResults.map(track => {
+                        // Feature 5: Badges
+                        const explicitBadge = track.explicit ? `<span class="badge explicit">E</span>` : '';
+                        const qualityBadge = (track.audioQuality === 'LOSSLESS' || track.audioQuality === 'HI_RES') ? `<span class="badge quality">M</span>` : '';
+                        
+                        return `
                         <div class="item-card" data-track-id="${track.id}">
                             <img src="${getHighResArtwork(track.album.cover)}" class="item-card-art">
                             <div class="item-card-info">
                                 <div class="item-card-title">${sanitize(track.title)}</div>
                                 <div class="item-card-subtitle">${sanitize(track.artist.name)}</div>
+                                <div class="meta-badges">${explicitBadge}${qualityBadge}</div>
                             </div>
-                        </div>`).join('');
+                        </div>`;
+                    }).join('');
                     break;
             }
             resultsGrid.innerHTML = resultsHtml;
@@ -5458,8 +5538,19 @@ async function renderDiscoverBrowse() {
     
     // Feature 6: Render History (Preserved from previous steps)
     const historyContainer = document.getElementById('search-history-container');
-    if (historyContainer && searchHistory.length > 0) {
-        // (History logic remains if implemented, otherwise skipped)
+    if (searchHistory.length > 0) {
+        let historyHtml = `<h3 class="section-title" style="font-size: 1.2rem; margin-top:20px;">Recent</h3><div style="display:flex; gap:10px; flex-wrap:wrap;">`;
+        historyHtml += searchHistory.map(term => 
+            `<div class="history-pill" onclick="document.getElementById('tidalSearchInput').value='${sanitize(term)}'; document.getElementById('tidalSearchInput').dispatchEvent(new Event('input'));"><span class="material-symbols-rounded" style="font-size:16px">history</span>${sanitize(term)}</div>`
+        ).join('');
+        historyHtml += `</div>`;
+        
+        // Insert before Trending
+        const trendingGrid = document.getElementById('tidal-trending-grid');
+        if (trendingGrid && !document.getElementById('search-history-container')) {
+            trendingGrid.parentNode.insertBefore(historyContainer, trendingGrid.previousElementSibling); // Insert before "Trending Now" title
+        }
+        historyContainer.innerHTML = historyHtml;
     }
 
     const trendingGrid = document.getElementById('tidal-trending-grid');
@@ -6263,12 +6354,14 @@ function initModalVariables() {
     document.getElementById('closeManualLyricsModal').addEventListener('click', () => closeModal(manualLyricsSearchModal));
 }
 
-        function openManageFoldersModal() {
-            // Populate settings
-            document.getElementById('tidalToggle').checked = istidalEnabled;
-            document.getElementById('lrclibToggle').checked = isLrclibEnabled;
-            openModal(manageFoldersModal);
-        }
+function openManageFoldersModal() {
+    document.getElementById('tidalToggle').checked = istidalEnabled;
+    document.getElementById('lrclibToggle').checked = isLrclibEnabled;
+    document.getElementById('prefAudioQuality').value = prefAudioQuality;
+    document.getElementById('smartCacheToggle').checked = enableSmartCache;
+    document.getElementById('streamOnlyToggle').checked = enableStreamOnly;
+    openModal(manageFoldersModal);
+}
 
         async function saveIntegrationSettings() {
             istidalEnabled = document.getElementById('tidalToggle').checked;
@@ -6286,14 +6379,22 @@ function initModalVariables() {
 async function saveIntegrationSettings() {
     istidalEnabled = document.getElementById('tidalToggle').checked;
     isLrclibEnabled = document.getElementById('lrclibToggle').checked;
+    prefAudioQuality = document.getElementById('prefAudioQuality').value;
+    enableSmartCache = document.getElementById('smartCacheToggle').checked;
+    enableStreamOnly = document.getElementById('streamOnlyToggle').checked;
 
     const tx = db.transaction('config', 'readwrite');
     await Promise.all([
         tx.objectStore('config').put({ key: 'istidalEnabled', value: istidalEnabled }),
-        tx.objectStore('config').put({ key: 'isLrclibEnabled', value: isLrclibEnabled })
+        tx.objectStore('config').put({ key: 'isLrclibEnabled', value: isLrclibEnabled }),
+        tx.objectStore('config').put({ key: 'prefAudioQuality', value: prefAudioQuality }),
+        tx.objectStore('config').put({ key: 'enableSmartCache', value: enableSmartCache }),
+        tx.objectStore('config').put({ key: 'enableStreamOnly', value: enableStreamOnly })
     ]);
     
     toggletidalTab();
+    Gurasuraisu.showPopup("Settings saved");
+    closeModal(manageFoldersModal);
 }
 
 function toggletidalTab() {
@@ -6311,6 +6412,13 @@ function toggletidalTab() {
             const signal = tidalSearchAbortController.signal;
 
             const query = document.getElementById('tidalSearchInput').value.trim();
+            if (query && !loadMore) {
+                // Feature 6: Save History
+                searchHistory = searchHistory.filter(h => h !== query).slice(0, 4); // Keep last 5 unique
+                searchHistory.unshift(query);
+                localStorage.setItem('searchHistory', JSON.stringify(searchHistory));
+            }
+            
             const resultsGrid = document.getElementById('tidal-results-grid');
             if (!query) {
                 resultsGrid.innerHTML = '';
@@ -6438,6 +6546,7 @@ async function cachetidalTrack(songObject, streamUrl) {
 }
 
 async function proactivelyCacheNextInQueue() {
+    if (!enableSmartCache || enableStreamOnly) return; 
     if (playQueue.length === 0 || currentQueueIndex < 0) return;
 
     // ** Dynamic Caching Strategy **
@@ -6517,6 +6626,20 @@ async function processAndCachetidalTrack(songObject) {
         return cacheEntry;
     }
     return null;
+}
+
+function highlightCurrentTrack() {
+    // Remove old highlights
+    document.querySelectorAll('.current-track').forEach(el => el.classList.remove('current-track'));
+    
+    if (!currentSongId) return;
+
+    // Highlight in lists
+    const items = document.querySelectorAll(`.music-item[data-id="${currentSongId}"], .music-item[data-track-id="${currentSongId}"], .music-item[data-cached-id="${currentSongId}"]`);
+    items.forEach(el => {
+        el.classList.add('current-track');
+        // Optional: Scroll to view if in a long list, but be careful not to annoy user
+    });
 }
 
 async function openArtistView(artistId, artistName) {
@@ -6937,26 +7060,30 @@ async function saveAlbumContent(tracks, albumName, silent = false) {
         
 async function processAndCacheAudio(songObject, signal = null) {
     try {
-        const baseQualityLevels = ['LOSSLESS', 'HIGH', 'LOW'];
-        let qualityLevelsToTry = [];
-        if (songObject.audioQuality && baseQualityLevels.includes(songObject.audioQuality)) {
-            qualityLevelsToTry.push(songObject.audioQuality);
-        }
-        baseQualityLevels.forEach(q => {
-            if (!qualityLevelsToTry.includes(q)) {
-                qualityLevelsToTry.push(q);
-            }
+        // 1. Configure Quality Order based on Settings
+        // Use global prefAudioQuality if available, otherwise default to LOSSLESS
+        const userPref = (typeof prefAudioQuality !== 'undefined') ? prefAudioQuality : 'LOSSLESS';
+        const allQualities = ['LOSSLESS', 'HIGH', 'LOW'];
+        
+        let qualityLevelsToTry = [userPref];
+        
+        // Add remaining qualities as fallbacks
+        allQualities.forEach(q => {
+            if (!qualityLevelsToTry.includes(q)) qualityLevelsToTry.push(q);
         });
 
         let concatenatedBlob = null;
+        let finalQuality = 'LOW'; // Default to low, update if we find better
 
         // --- Stage 1: Attempt to fetch using /track endpoint (Preferred) ---
         console.log(`Attempting to fetch via /track endpoint for "${songObject.name}"...`);
         for (const quality of qualityLevelsToTry) {
             if (concatenatedBlob) break;
+            
             try {
-                // PASS SIGNAL HERE
+                // Use fetchHifi for API resilience, pass signal
                 const response = await fetchHifi(`/track/?id=${songObject.id}&quality=${quality}`, { signal });
+                
                 if (response.ok) {
                     const responseData = await response.json();
                     const data = responseData.data || {};
@@ -6969,17 +7096,22 @@ async function processAndCacheAudio(songObject, signal = null) {
                         if (decodedManifest.urls && decodedManifest.urls[0]) {
                             const audioUrl = decodedManifest.urls[0];
                             console.log(`Found direct URL via /track manifest for quality: ${quality}`);
-                            // PASS SIGNAL HERE
+                            
+                            // Use standard fetch for CDN download, but pass signal
                             const audioResponse = await fetch(audioUrl, { signal });
                             if (audioResponse.ok) {
                                 concatenatedBlob = await audioResponse.blob();
+                                finalQuality = quality; // Capture the actual quality found
                             }
                         }
                     }
                 }
             } catch(e) {
-                if (e.name === 'AbortError') throw e; // Rethrow abort
-                console.warn(`Request to /track with quality ${quality} failed:`, e);
+                if (e.name === 'AbortError') throw e; 
+                // Don't log every 401/403 for high qualities, it's expected if not available
+                if(e.message && !e.message.includes('401')) {
+                    console.warn(`Request to /track with quality ${quality} failed:`, e);
+                }
             }
         }
 
@@ -6988,8 +7120,8 @@ async function processAndCacheAudio(songObject, signal = null) {
             console.log(`All /track attempts failed. Trying /dash endpoint...`);
             for (const quality of qualityLevelsToTry) {
                 if (concatenatedBlob) break;
+                
                 try {
-                    // PASS SIGNAL HERE
                     const response = await fetchHifi(`/dash/?id=${songObject.id}&quality=${quality}`, { signal });
                     if (!response.ok) continue;
 
@@ -7014,28 +7146,31 @@ async function processAndCacheAudio(songObject, signal = null) {
                         for (let i = 0; i < segments.length; i++) {
                             segmentUrls.push(mediaUrlTemplate.replace('$Number$', i + 1));
                         }
-                        // PASS SIGNAL HERE (Mapped fetches)
+                        
+                        // Fetch segments in parallel
                         const [initSegmentBlob, ...mediaSegmentBlobs] = await Promise.all(
                             [initUrl, ...segmentUrls].map(url => fetch(url, { signal }).then(res => res.blob()))
                         );
                         concatenatedBlob = new Blob([initSegmentBlob, ...mediaSegmentBlobs], { type: 'audio/mp4' });
+                        finalQuality = quality;
+
                     } else {
                         try {
                             const directUrlData = JSON.parse(text);
                             if (directUrlData && directUrlData.urls && directUrlData.urls.length > 0) {
                                 console.log(`Found direct URL via /dash for quality: ${quality}`);
-                                // PASS SIGNAL HERE
                                 const audioResponse = await fetch(directUrlData.urls[0], { signal });
                                 if (audioResponse.ok) {
                                     concatenatedBlob = await audioResponse.blob();
+                                    finalQuality = quality;
                                 }
                             }
                         } catch (e) {
-                           console.warn(`/dash response for quality ${quality} was not valid XML or JSON.`);
+                           // Silent catch for JSON parse errors on XML data
                         }
                     }
                 } catch (e) {
-                    if (e.name === 'AbortError') throw e; // Rethrow abort
+                    if (e.name === 'AbortError') throw e;
                     console.warn(`Request to /dash with quality ${quality} failed:`, e);
                 }
             }
@@ -7046,22 +7181,38 @@ async function processAndCacheAudio(songObject, signal = null) {
         }
 
         const cacheEntry = {
-            id: songObject.id, blob: concatenatedBlob, timestamp: Date.now(), size: concatenatedBlob.size,
-            metadata: { ...songObject, lyrics: null, lrcData: null }
+            id: songObject.id, 
+            blob: concatenatedBlob, 
+            timestamp: Date.now(), 
+            size: concatenatedBlob.size,
+            metadata: { 
+                ...songObject, 
+                audioQuality: finalQuality, // Store the actual quality we got
+                lyrics: null, 
+                lrcData: null 
+            }
         };
 
-        const tx = db.transaction('tidalCache', 'readwrite');
-        tx.objectStore('tidalCache').put(cacheEntry);
-        await tx.done;
-        console.log(`Successfully cached audio for "${songObject.name}"`);
-        await manageCacheSize();
+        // 3. Check Stream Only Mode Setting
+        // Only write to DB if Stream Only is FALSE
+        if (typeof enableStreamOnly === 'undefined' || !enableStreamOnly) {
+            const tx = db.transaction('tidalCache', 'readwrite');
+            tx.objectStore('tidalCache').put(cacheEntry);
+            await tx.done;
+            console.log(`Successfully cached audio for "${songObject.name}" [${finalQuality}]`);
+            await manageCacheSize();
+        } else {
+            console.log(`Stream Only Mode: "${songObject.name}" loaded to RAM, not caching.`);
+        }
+        
         return cacheEntry;
+
     } catch (error) {
         if (error.name === 'AbortError') {
             console.log(`Aborted audio processing for ${songObject.name}`);
             return null;
         }
-        console.error(`Failed to cache audio for ${songObject.name}:`, error);
+        console.error(`Failed to process audio for ${songObject.name}:`, error);
         return null;
     }
 }
@@ -7896,16 +8047,25 @@ window.addEventListener("load", async () => {
         const scEnabledReq = configTx.objectStore('config').get('istidalEnabled');
         const corsProxyReq = configTx.objectStore('config').get('isCorsProxyEnabled');
         const lrclibReq = configTx.objectStore('config').get('isLrclibEnabled'); 
-        
+        const qualityReq = configTx.objectStore('config').get('prefAudioQuality');
+        const cacheReq = configTx.objectStore('config').get('enableSmartCache');
+        const streamOnlyReq = configTx.objectStore('config').get('enableStreamOnly');
+            
         const scIdResult = await new Promise(r => { scIdReq.onsuccess = () => r(scIdReq.result) });
         const scEnabledResult = await new Promise(r => { scEnabledReq.onsuccess = () => r(scEnabledReq.result) });
         const corsProxyResult = await new Promise(r => { corsProxyReq.onsuccess = () => r(corsProxyReq.result) });
         const lrclibEnabledResult = await new Promise(r => { lrclibReq.onsuccess = () => r(lrclibReq.result) }); 
+        const qualityRes = await new Promise(r => { qualityReq.onsuccess = () => r(qualityReq.result) });
+        const cacheRes = await new Promise(r => { cacheReq.onsuccess = () => r(cacheReq.result) });
+        const streamOnlyRes = await new Promise(r => { streamOnlyReq.onsuccess = () => r(streamOnlyReq.result) });
         
         tidalClientId = scIdResult ? scIdResult.value : '';
         istidalEnabled = scEnabledResult ? scEnabledResult.value : false;
         isCorsProxyEnabled = corsProxyResult ? corsProxyResult.value : false;
         isLrclibEnabled = lrclibEnabledResult ? lrclibEnabledResult.value : false;
+        if(qualityRes) prefAudioQuality = qualityRes.value;
+        if(cacheRes !== undefined) enableSmartCache = cacheRes.value;
+        if(streamOnlyRes !== undefined) enableStreamOnly = streamOnlyRes.value;
                 
         if (istidalEnabled) {
             await findFastestHifiEndpoint();
@@ -7959,13 +8119,20 @@ async function verifyPermission(handle, shouldRequest = false) {
 }
 
         function updatePlayerUI(song, progress = 0) {
-            musicTitle.textContent = sanitize(song.name);
-            musicArtist.textContent = song.artist;
-            albumArtImg.src = song.albumArt;
-            albumArtImg.classList.remove('fade-out');
-            updateAllBackgrounds(song.albumArt);
-            updateFavicon(song.albumArt);
+            // musicTitle.textContent = sanitize(song.name);
+            // musicArtist.textContent = song.artist;
+            musicTitle.innerHTML = `<span class="clickable" onclick="openContextFromPlayer('album')">${sanitize(song.name)}</span>`;
+            musicArtist.innerHTML = `<span class="clickable" onclick="openContextFromPlayer('artist')">${sanitize(song.artist)}</span>`;
             updateTimeDisplays(progress, audioPlayer.duration);
+            highlightCurrentTrack();
+
+            const stableArtUrl = song.albumArt || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+            if (albumArtImg.src !== stableArtUrl) {
+                albumArtImg.src = stableArtUrl;
+                albumArtImg.classList.remove('fade-out');
+                updateAllBackgrounds(stableArtUrl);
+                updateFavicon(stableArtUrl);
+            }
 
             const statusEl = document.getElementById('player-status');
             if (statusEl) {
