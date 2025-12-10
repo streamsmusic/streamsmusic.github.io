@@ -2005,7 +2005,7 @@
             background: var(--search-background);
             border: 1px solid var(--glass-border);
             box-shadow: var(--sun-shadow);
-            border-radius: 20px;
+            border-radius: 25px;
             color: var(--text-color);
             font-weight: 500;
             cursor: pointer;
@@ -2163,7 +2163,7 @@
             </div>
             
             <div id="tidal-browse-container" style="padding-top: 70px; padding-bottom: 240px; display: none;">
-                <div class="filter-container" id="genre-pills" style="flex-wrap: wrap; justify-content: flex-start; margin-bottom: 20px;">
+                <div class="filter-container" id="genre-pills" style="flex-wrap: wrap; justify-content: center; margin-bottom: 20px; gap: 10px;">
                     <!-- Genres injected here -->
                 </div>
                 <h3 class="section-title" style="font-size: 1.2rem;">Trending Now</h3>
@@ -5527,22 +5527,18 @@ async function rendertidalPage() {
 
 async function renderDiscoverBrowse() {
     const browseContainer = document.getElementById('tidal-browse-container');
+    const pillsContainer = document.getElementById('genre-pills');
     if (!browseContainer) return;
 
-    // 1. Search History (Fixed DOM Insertion)
+    // 1. Search History
     if (searchHistory.length > 0) {
-        // Check if container already exists to avoid duplicates
-        let historyContainer = document.getElementById('search-history-container');
-        
-        if (!historyContainer) {
-            historyContainer = document.createElement('div');
-            historyContainer.id = 'search-history-container';
-            // Insert history AFTER the genre pills
-            if (pillsContainer && pillsContainer.nextSibling) {
-                browseContainer.insertBefore(historyContainer, pillsContainer.nextSibling);
-            } else {
-                browseContainer.appendChild(historyContainer);
-            }
+        historyContainer = document.createElement('div');
+        historyContainer.id = 'search-history-container';
+        // Insert history AFTER the genre pills
+        if (pillsContainer && pillsContainer.nextSibling) {
+            browseContainer.insertBefore(historyContainer, pillsContainer.nextSibling);
+        } else {
+            browseContainer.appendChild(historyContainer);
         }
 
         let historyHtml = `<div style="display:flex; gap:10px; margin: 20px 0; flex-wrap:wrap;">`;
@@ -5554,7 +5550,6 @@ async function renderDiscoverBrowse() {
     }
     
     // 2. Genres
-    const pillsContainer = document.getElementById('genre-pills');
     if (pillsContainer && pillsContainer.children.length === 0) {
         pillsContainer.innerHTML = GENRES.map(g => 
             `<div class="genre-pill" onclick="searchGenre('${g}')">${g}</div>`
