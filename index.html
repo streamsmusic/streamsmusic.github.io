@@ -2865,35 +2865,40 @@ async function startRadio(type, query) {
 }
 
 async function appendRadioTracks() {
-    if (isFetchingQueue) return; // Prevent multiple triggers
+    if (isFetchingQueue) return; 
     isFetchingQueue = true;
     toggleQueueLoading(true);
 
     const query = radioSeed.query;
     
-    // 1. Randomness: Use a much larger offset range
+    // 1. Randomness: Use a large offset, but fetch MORE items (limit 100) to get a better shuffle pool
     let offset = Math.floor(Math.random() * 500); 
-    let searchPath = `/search/?s=${encodeURIComponent(query)}&limit=50&offset=${offset}`;
-    let res = await fetchHifi(searchPath);
-    
+    let searchPath = `/search/?s=${encodeURIComponent(query)}&limit=100&offset=${offset}`;
+
     try {
         let res = await fetchHifi(searchPath);
         let data = await res.json();
         let rawItems = (data.data || data).items || [];
 
-        // Fallback: If strict search yields nothing, pivot to a random genre
-        if (rawItems.length === 0) {
-            console.log("Radio seed exhausted, pivoting to random genre...");
-            const randomGenre = GENRES[Math.floor(Math.random() * GENRES.length)];
-            offset = Math.floor(Math.random() * 200);
-            searchPath = `/search/?s=${encodeURIComponent(randomGenre)}&limit=50&offset=${offset}`;
+        // FALLBACK: If random offset was too deep (no results), try offset 0 once
+        if (rawItems.length === 0 && offset > 0) {
+            console.log("Radio seed offset too deep, retrying at 0...");
+            searchPath = `/search/?s=${encodeURIComponent(query)}&limit=100&offset=0`;
             res = await fetchHifi(searchPath);
             data = await res.json();
             rawItems = (data.data || data).items || [];
         }
         
-        let newTracks = rawItems.map(track => {
-            // Robust checks for nested artist/album objects to prevent missing metadata
+        // If STILL no items, we simply return. 
+        // We do NOT switch to random genres or "mixes" as requested.
+        if (rawItems.length === 0) {
+            console.log("No tracks found for Radio seed.");
+            isFetchingQueue = false;
+            toggleQueueLoading(false);
+            return;
+        }
+        
+        let mappedTracks = rawItems.map(track => {
             const safeArtist = (track.artist && track.artist.name) ? track.artist.name : (track.artist || "Unknown Artist");
             const safeAlbum = (track.album && track.album.title) ? track.album.title : (track.album || "Unknown Album");
             const safeCover = (track.album && track.album.cover) ? track.album.cover : null;
@@ -2912,48 +2917,37 @@ async function appendRadioTracks() {
             };
         });
         
-        // Shuffle BEFORE filtering to ensure variety
-        shuffleArray(newTracks);
+        // 2. Heavy Shuffling: Shuffle the raw mapped result immediately
+        shuffleArray(mappedTracks);
 
-        // Deduplication against session history
+        // 3. Deduplication Logic
         const currentQueueIds = new Set(playQueue.map(s => s.id));
-        newTracks = newTracks.filter(t => !currentQueueIds.has(t.id) && !sessionPlayedIds.has(t.id));
         
-        // Relaxed Deduplication: If strict filtering killed all results, allow session repeats but NOT queue repeats
-        if (newTracks.length === 0 && rawItems.length > 0) {
-             console.log("Relaxing filter to allow session repeats in Radio...");
-             // Re-map the raw items
-             newTracks = rawItems.map(track => {
-                const safeArtist = (track.artist && track.artist.name) ? track.artist.name : (track.artist || "Unknown Artist");
-                const safeAlbum = (track.album && track.album.title) ? track.album.title : (track.album || "Unknown Album");
-                return {
-                    id: track.id,
-                    name: track.title || "Unknown Title",
-                    artist: safeArtist,
-                    album: safeAlbum,
-                    albumArt: getHighResArtwork(track.album ? track.album.cover : null),
-                    storage: 'tidal',
-                    duration: track.duration,
-                    audioQuality: track.audioQuality,
-                    vibrantColor: track.album ? track.album.vibrantColor : null
-                };
-             }).filter(t => !currentQueueIds.has(t.id));
-             shuffleArray(newTracks);
+        // Filter out songs ALREADY in the queue (Strict)
+        let candidates = mappedTracks.filter(t => !currentQueueIds.has(t.id));
+
+        // Separate into "Fresh" (never played this session) and "Repeats"
+        let freshTracks = candidates.filter(t => !sessionPlayedIds.has(t.id));
+        let repeatTracks = candidates.filter(t => sessionPlayedIds.has(t.id));
+
+        let finalSelection = [];
+
+        // If we have plenty of fresh tracks, just use them
+        if (freshTracks.length >= 20) {
+            finalSelection = freshTracks;
+        } else {
+            // If running low on fresh tracks, mix in repeats to ensure radio flows
+            console.log(`Radio mixing: ${freshTracks.length} fresh, ${repeatTracks.length} repeats`);
+            finalSelection = [...freshTracks, ...repeatTracks];
         }
 
-        if (newTracks.length > 0) {
-            playQueue.push(...newTracks);
+        // 4. Final Shuffle: Mix the fresh and repeats together so repeats don't clump at the end
+        shuffleArray(finalSelection);
+
+        if (finalSelection.length > 0) {
+            // Take a reasonable chunk (e.g., 25 songs) to add to queue
+            playQueue.push(...finalSelection.slice(0, 25));
             if (isPanelVisible && panelContent === 'queue') renderQueue();
-        } else {
-            // Recursive retry with broader term if completely dry
-            if (!query.includes("mix")) {
-                console.log("Retrying with broader query...");
-                isFetchingQueue = false; // Reset lock for recursion
-                toggleQueueLoading(false); // Reset loader for recursion
-                radioSeed.query = "mix"; 
-                await appendRadioTracks();
-                return; // Exit current stack
-            }
         }
         
     } catch (e) {
@@ -5728,7 +5722,7 @@ function setPlayerLoadingState(isLoading, song = null) {
 async function generateAutoplaySongs() {
     if (isFetchingQueue) return;
     isFetchingQueue = true;
-    toggleQueueLoading(true); // Show spinner at bottom of queue
+    toggleQueueLoading(true);
 
     removeAutoplaySongs(); 
 
@@ -5740,45 +5734,50 @@ async function generateAutoplaySongs() {
     }
 
     try {
-        const response = await fetchHifi(`/search/?s=${encodeURIComponent(lastSong.artist)}&limit=50`);
-        if (!response.ok) throw new Error("Autoplay search failed");
-        
+        // Fetch 100 items for better variety
+        const response = await fetchHifi(`/search/?s=${encodeURIComponent(lastSong.artist)}&limit=100`);
         const data = await response.json();
         const potentialTracks = (data.data || data).items || [];
         
+        // Immediate Shuffle
         shuffleArray(potentialTracks);
 
         const currentQueueIds = new Set(playQueue.map(s => s.id));
         
-        const recommendations = potentialTracks
-            .filter(track => {
-                if (!track || !track.id) return false;
-                if (currentQueueIds.has(track.id)) return false;
-                if (sessionPlayedIds.has(track.id)) return false; // Strict session dedup
-                return true;
-            })
-            .map(track => ({
-                id: track.id,
-                name: track.title,
-                artist: (track.artist && track.artist.name) ? track.artist.name : track.artist,
-                album: (track.album && track.album.title) ? track.album.title : track.album,
-                albumArt: getHighResArtwork(track.album ? track.album.cover : null),
-                storage: 'tidal',
-                duration: track.duration,
-                audioQuality: track.audioQuality,
-                vibrantColor: track.album ? track.album.vibrantColor : null
-            }))
-            .slice(0, 20);
+        // Map first to get clean objects
+        let mappedCandidates = potentialTracks.map(track => ({
+            id: track.id,
+            name: track.title,
+            artist: (track.artist && track.artist.name) ? track.artist.name : track.artist,
+            album: (track.album && track.album.title) ? track.album.title : track.album,
+            albumArt: getHighResArtwork(track.album ? track.album.cover : null),
+            storage: 'tidal',
+            duration: track.duration,
+            audioQuality: track.audioQuality,
+            vibrantColor: track.album ? track.album.vibrantColor : null
+        })).filter(t => t.id && !currentQueueIds.has(t.id)); // Filter invalid or current queue
 
-        if (recommendations.length > 0) {
-            recommendations.forEach(song => autoplaySongIds.add(song.id));
-            playQueue.push(...recommendations);
+        // Split Fresh vs Repeats
+        let fresh = mappedCandidates.filter(t => !sessionPlayedIds.has(t.id));
+        let repeats = mappedCandidates.filter(t => sessionPlayedIds.has(t.id));
+
+        let finalSelection = [];
+        
+        // Prefer fresh, fallback to repeats if needed to fill a buffer of 20
+        if (fresh.length >= 20) {
+            finalSelection = fresh.slice(0, 20);
         } else {
-            // Fallback to broader search if strict dedup fails
-            console.log("Autoplay strict dedup exhausted, trying similar...");
-            const fallbackRes = await fetchHifi(`/search/?s=similar%20to%20${encodeURIComponent(lastSong.artist)}&limit=20`);
-            // ... (Simple processing for fallback could be added here if desired)
+            // Fill up to 20 with fresh, then repeats
+            finalSelection = [...fresh, ...repeats].slice(0, 20);
         }
+
+        // Final shuffle of the selection
+        shuffleArray(finalSelection);
+
+        if (finalSelection.length > 0) {
+            finalSelection.forEach(song => autoplaySongIds.add(song.id));
+            playQueue.push(...finalSelection);
+        } 
         
         if (isPanelVisible && panelContent === 'queue') {
             renderQueue();
