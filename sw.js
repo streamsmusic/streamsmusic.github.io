@@ -1,8 +1,8 @@
-const CACHE_NAME = 'streams-cache-v2.0';
+const CACHE_NAME = 'streams-cache-v3.0';
 
 const ASSETS_TO_CACHE = [
-  '/streams/index.html',
-  '/streams/favicon.png'
+  '/index.html',
+  '/favicon.png'
 ];
 
 // INSTALL: Cache all assets. This now uses a single, simpler call.
