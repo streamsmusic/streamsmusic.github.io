@@ -3478,6 +3478,36 @@ async function syncLibraryToDrive(interactive = false) {
     }
 }
 
+async function restoreTidalDownloads(importedSongs) {
+    const tidalSongs = importedSongs.filter(s => s.storage === 'tidal');
+    if (tidalSongs.length === 0) return;
+
+    // Only run if streaming is enabled and stream-only is OFF
+    if (!istidalEnabled || (typeof enableStreamOnly !== 'undefined' && enableStreamOnly)) return;
+
+    showToast(`Downloading ${tidalSongs.length} items...`);
+    
+    let downloadedCount = 0;
+    // Process sequentially to be gentle on network/API
+    for (const song of tidalSongs) {
+        try {
+            // Check if already cached
+            const tx = db.transaction('tidalCache', 'readonly');
+            const exists = await promiseIDBRequest(tx.objectStore('tidalCache').get(song.id));
+            
+            if (!exists) {
+                const result = await processAndCacheAudio(song);
+                if (result) downloadedCount++;
+            }
+        } catch (e) {
+            console.warn(`Restoration download skipped for ${song.name}`);
+        }
+    }
+    if (downloadedCount > 0) {
+        showToast(`Finished downloading ${downloadedCount} songs.`);
+    }
+}
+
 // Helper to reuse import logic
 async function restoreFromData(data) {
     const tx = db.transaction(['songs', 'playlists', 'playHistory'], 'readwrite');
@@ -10038,36 +10068,6 @@ document.getElementById('importLibraryInput').addEventListener('change', async (
             };
             reader.readAsText(file);
         });
-
-        async function restoreTidalDownloads(importedSongs) {
-            const tidalSongs = importedSongs.filter(s => s.storage === 'tidal');
-            if (tidalSongs.length === 0) return;
-
-            // Only run if streaming is enabled and stream-only is OFF
-            if (!istidalEnabled || (typeof enableStreamOnly !== 'undefined' && enableStreamOnly)) return;
-
-            showToast(`Downloading ${tidalSongs.length} items...`);
-            
-            let downloadedCount = 0;
-            // Process sequentially to be gentle on network/API
-            for (const song of tidalSongs) {
-                try {
-                    // Check if already cached
-                    const tx = db.transaction('tidalCache', 'readonly');
-                    const exists = await promiseIDBRequest(tx.objectStore('tidalCache').get(song.id));
-                    
-                    if (!exists) {
-                        const result = await processAndCacheAudio(song);
-                        if (result) downloadedCount++;
-                    }
-                } catch (e) {
-                    console.warn(`Restoration download skipped for ${song.name}`);
-                }
-            }
-            if (downloadedCount > 0) {
-                showToast(`Finished downloading ${downloadedCount} songs.`);
-            }
-        }
 
         const tidalSearchInput = document.getElementById('tidalSearchInput');
         tidalSearchInput.addEventListener('input', () => {
