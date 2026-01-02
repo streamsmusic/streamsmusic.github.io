@@ -4267,13 +4267,6 @@ function resetPlayer() {
                         await saveBlobToLocalFile(song.id, cached.blob);
                         return URL.createObjectURL(cached.blob);
                     }
-                    
-                    // Fallback to full process (download to blob)
-                    const cached = await processAndCacheAudio(tidalSong);
-                    if (cached && cached.blob) {
-                        await saveBlobToLocalFile(song.id, cached.blob);
-                        return URL.createObjectURL(cached.blob);
-                    }
                 } catch (e) {
                     console.warn(`Strategy ${query} failed:`, e);
                 }
