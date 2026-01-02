@@ -10303,10 +10303,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         document.getElementById('saveIntegrations').addEventListener('click', async () => {
             // Save Google Client ID
-            const gClientId = document.getElementById('gDriveClientId').value.trim();
+            /* const gClientId = document.getElementById('gDriveClientId').value.trim();
             const tx = db.transaction('config', 'readwrite');
             tx.objectStore('config').put({ key: 'gDriveClientId', value: gClientId });
-            await tx.done;
+            await tx.done; */
             saveIntegrationSettings();
         });
 
