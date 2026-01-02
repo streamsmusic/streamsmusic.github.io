@@ -958,7 +958,7 @@
             font-weight: bold;
             text-transform: uppercase;
         }
-        .badge.explicit { color: var(--background-color); border-color: #ff6b6b }
+        .badge.explicit { background-color: var(--accent); color: var(--background-color); }
         
         /* Search History Pills */
         .history-pill {
@@ -3903,7 +3903,7 @@ async function appendRadioTracks() {
                     resultsGrid.className = 'item-grid';
                     resultsHtml = lasttidalSearchResults.map(track => {
                         // Feature 5: Badges
-                        const explicitBadge = track.explicit ? `<span class="badge explicit">E</span>` : '';
+                        const explicitBadge = track.explicit ? `<span class="badge explicit">19+</span>` : '';
                         
                         return `
                         <div class="item-card" data-track-id="${track.id}">
