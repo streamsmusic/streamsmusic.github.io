@@ -1118,7 +1118,7 @@
             max-width: 600px;
             box-sizing: border-box;
             width: 100%;
-            justify-content: space-between;
+            justify-content: space-evenly;
             margin-bottom: 80px;
             transition: opacity 0.3s ease;
         }
@@ -1231,7 +1231,7 @@
             vertical-align: middle;
         }
 
-        .lyrics-button, .queue-button, .more-button {
+        .lyrics-button, .queue-button, .more-button, .controls-container-btn {
             background: transparent;
             border: none;
             cursor: pointer;
@@ -1553,25 +1553,6 @@
             margin: 10px 5px;
         }
         
-        #shuffleBtn, #repeatBtn {
-            background: transparent;
-            border: none;
-            color: var(--text-color);
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            cursor: pointer;
-            font-size: 1.2rem;
-            transition: all 0.3s ease;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            line-height: 0;
-            backdrop-filter: none;
-            border: 1px solid transparent;
-            box-shadow: none;
-        }
-        
         #shuffleBtn.active, #repeatBtn.active {
             backdrop-filter: blur(8px);
             background: var(--search-background);
@@ -1684,13 +1665,6 @@
                 gap: 4vh !important;
             }
 
-            #shuffleBtn, #repeatBtn {
-                width: 30px;
-                height: 30px;
-                border-radius: 15px;
-                corner-shape: superellipse(1.5);
-            }
-            
             .drawer {
                 height: calc(100% - 80px); /* Full height minus top toolbar */
             }
@@ -2374,10 +2348,6 @@
             opacity: 0.5;
         }
 
-        body.radio-mode .player-controls {
-            justify-content: space-evenly;
-        }
-
         body.radio-mode #shuffleBtn, body.radio-mode #repeatBtn {
             display: none;
         }
@@ -2664,9 +2634,6 @@
                 </div>
             </div>
             <div class="player-controls">
-                <button class="control-btn" id="shuffleBtn">
-                    <span class="material-symbols-rounded">shuffle</span>
-                </button>
                 <button class="control-btn" id="prevBtn">
                     <span class="material-symbols-rounded" style="font-size: 36px;">fast_rewind</span>
                 </button>
@@ -2676,11 +2643,14 @@
                 <button class="control-btn" id="nextBtn">
                     <span class="material-symbols-rounded" style="font-size: 36px;">fast_forward</span>
                 </button>
-                <button class="control-btn" id="repeatBtn">
-                    <span class="material-symbols-rounded">repeat</span>
-                </button>
             </div>
             <div class="controls-container">
+                <button class="controls-container-btn" id="shuffleBtn">
+                    <span class="material-symbols-rounded">shuffle</span>
+                </button>
+                <button class="controls-container-btn" id="repeatBtn">
+                    <span class="material-symbols-rounded">repeat</span>
+                </button>
                 <button class="lyrics-button">
                     <span class="material-symbols-rounded" style="font-size: 18px;">tooltip_2</span>
                 </button>
@@ -3894,7 +3864,7 @@ function resetPlayer() {
 }
     
         function formatTime(seconds) {
-            if (isNaN(seconds) || seconds < 0) return "-:--";
+            if (isNaN(seconds) || seconds < 0) return "--:--";
             const minutes = Math.floor(seconds / 60);
             const remainingSeconds = Math.floor(seconds % 60);
             return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
