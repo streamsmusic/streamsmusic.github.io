@@ -1,0 +1,27 @@
+{
+  "name": "수박음악",
+  "short_name": "수박",
+  "description": "음악 스트리밍 서비스",
+  "id": "ko-watermelon-music",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "scope": "./",
+  "categories": ["entertainment"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "streams.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "streams.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
