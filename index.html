@@ -3903,12 +3903,13 @@ async function appendRadioTracks() {
                         const playlistImage = playlist.image || playlist.squareImage || playlist.cover;
                         const trackCount = playlist.numberOfTracks || playlist.numberOfItems || 0;
                         
+                        const playlistArt = playlistImage ? getHighResArtwork(playlistImage) : null;
                         return `
                         <div class="item-card" data-playlist-id="${playlistId}" data-playlist-title="${sanitize(playlistTitle)}">
-                            <img src="${getHighResArtwork(playlistImage)}" class="item-card-art">
+                            ${getPlaylistArtPlaceholder(playlistArt ? [playlistArt] : [])}
                             <div class="item-card-info">
                                 <div class="item-card-title">${sanitize(playlistTitle)}</div>
-                                <div class="item-card-subtitle">${trackCount} tracks</div>
+                                <div class="item-card-subtitle">${trackCount}곡</div>
                             </div>
                         </div>`;
                     }).join('');
@@ -4484,6 +4485,23 @@ function generateRandomGradient() {
     ctx.fillRect(0, 0, 500, 500);
     
     return canvas.toDataURL('image/jpeg', 0.9);
+}
+
+function getPlaylistArtPlaceholder(imageUrls, className = "item-card-art") {
+    const validUrls = (imageUrls || []).filter(u => u && u.length > 0 && !u.includes('undefined')).slice(0, 4);
+    
+    if (validUrls.length >= 4) {
+        return `
+        <div class="${className}" style="display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; overflow: hidden; padding: 0; gap: 0; border: none; aspect-ratio: 1/1;">
+            <img src="${validUrls[0]}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 0; box-shadow: none; border: none; outline: none; display: block;">
+            <img src="${validUrls[1]}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 0; box-shadow: none; border: none; outline: none; display: block;">
+            <img src="${validUrls[2]}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 0; box-shadow: none; border: none; outline: none; display: block;">
+            <img src="${validUrls[3]}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 0; box-shadow: none; border: none; outline: none; display: block;">
+        </div>`;
+    }
+    
+    const fallback = validUrls.length > 0 ? validUrls[0] : generateRandomGradient();
+    return `<img src="${fallback}" class="${className}">`;
 }
 
 function updateLocalSongLookup(songsToAdd, options = {}) {
@@ -5825,13 +5843,13 @@ function renderLibraryPage() {
             // Generate the HTML for the user's existing playlists first
             itemsHtml = playlists.map(p => {
                 const playlistSongs = p.songIds.map(id => songs.find(s => s.id === id)).filter(Boolean);
-                const art = playlistSongs.length > 0 ? playlistSongs[0].albumArt : generateRandomGradient();
+                const arts = playlistSongs.map(s => s.albumArt);
                 return `
                 <div class="item-card" data-playlist-id="${p.id}">
-                    <img src="${art}" alt="${p.name}" class="item-card-art">
+                    ${getPlaylistArtPlaceholder(arts)}
                     <div class="item-card-info">
                         <div class="item-card-title">${sanitize(p.name)}</div>
-                        <div class="item-card-subtitle">${playlistSongs.length} songs</div>
+                        <div class="item-card-subtitle">${playlistSongs.length} 곡</div>
                     </div>
                 </div>`;
             }).join('');
@@ -5875,17 +5893,17 @@ function renderPlaylists() {
 
     playlists.forEach(playlist => {
         const playlistSongs = playlist.songIds.map(id => songs.find(s => s.id === id)).filter(Boolean);
-        const albumArt = playlistSongs.length > 0 ? playlistSongs[0].albumArt : generateRandomGradient();
+        const arts = playlistSongs.map(s => s.albumArt);
         
         const item = document.createElement('div');
         item.className = 'music-item';
         item.style.position = 'relative'; 
         item.innerHTML = `
             <div class="song-info">
-                <img src="${albumArt}" class="album-thumbnail" style="width: 40px; height: 40px; border-radius: 8px; margin-right: 5px;">
-                <div>
+                ${getPlaylistArtPlaceholder(arts, "album-thumbnail")}
+                <div style="padding-left: 5px;">
                     <div class="song-title" style="font-size: 1em; margin-bottom: 2px; white-space: normal;">${playlist.name}</div>
-                    <div class="album-artist" style="font-size: 0.8em;">${playlistSongs.length} songs</div>
+                    <div class="album-artist" style="font-size: 0.8em;">${playlistSongs.length} 곡</div>
                 </div>
             </div>
             <button class="remove-from-queue-btn" onclick="deletePlaylist(${playlist.id}, event)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%);">
