@@ -13,7 +13,9 @@ const ASSETS_TO_CACHE = [
   '/streams.png',
   '/favicon.png',
   '/ko/streams.png',
-  '/ko/favicon.png'
+  '/ko/favicon.png',
+  '/manifest.json',
+  '/ko/manifest.json'
 ];
 
 // INSTALL: Cache all assets. This now uses a single, simpler call.
