@@ -2735,6 +2735,10 @@
                     </select>
                 </div>
                 <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <label for="explicitToggle" style="color: var(--accent);">Hide Explicit Content</label>
+                    <input type="checkbox" id="explicitToggle">
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between;">
                     <label for="smartCacheToggle">Intelligent Cache</label>
                     <input type="checkbox" id="smartCacheToggle" checked>
                 </div>
@@ -3113,6 +3117,7 @@
         let prefAudioQuality = 'LOSSLESS';
         let enableSmartCache = true;
         let enableStreamOnly = false;
+        let hideExplicitContent = false;
         let searchHistory = JSON.parse(localStorage.getItem('searchHistory') || '[]');
         let localSongLookup = new Map();
         let isrcToLocalSongMap = new Map();
@@ -3206,6 +3211,10 @@
         function sanitize(str) {
             if (!str) return '';
             return str.toString().replace(/</g, "<").replace(/>/g, ">");
+        }
+        
+        function getExplicitBadge(isExplicit) {
+            return isExplicit ? `<span class="badge explicit" style="margin-left: 5px; vertical-align: text-bottom;">19+</span>` : '';
         }
 
         function openModal(modal) {
@@ -3698,7 +3707,7 @@ function renderSearchResults() {
              <div class="song-info">
                 <img src="${song.albumArt}" class="album-thumbnail" style="width: 40px; height: 40px; scale: 1.2; border-radius: 8px; margin-right: 10px;">
                 <div>
-                    <div class="song-title" style="white-space: normal;">${sanitize(song.name)}</div>
+                    <div class="song-title" style="white-space: normal;">${sanitize(song.name)}${getExplicitBadge(song.explicit)}</div>
                     <div class="album-artist" style="font-size: 0.8em;">${sanitize(song.artist)}</div>
                 </div>
             </div>
@@ -3925,9 +3934,8 @@ async function appendRadioTracks() {
                         <div class="item-card" data-track-id="${track.id}">
                             <img src="${getHighResArtwork(track.album.cover)}" class="item-card-art">
                             <div class="item-card-info">
-                                <div class="item-card-title">${sanitize(track.title)}</div>
+                                <div class="item-card-title">${sanitize(track.title)}${getExplicitBadge(track.explicit)}</div>
                                 <div class="item-card-subtitle">${sanitize(track.artist.name)}</div>
-                                <div class="meta-badges">${explicitBadge}</div>
                             </div>
                         </div>`;
                     }).join('');
@@ -7509,6 +7517,7 @@ function openManageFoldersModal() {
     document.getElementById('prefAudioQuality').value = prefAudioQuality;
     document.getElementById('smartCacheToggle').checked = enableSmartCache;
     document.getElementById('streamOnlyToggle').checked = enableStreamOnly;
+    document.getElementById('explicitToggle').checked = hideExplicitContent;
     openModal(manageFoldersModal);
 }
 
@@ -7531,6 +7540,7 @@ async function saveIntegrationSettings() {
     prefAudioQuality = document.getElementById('prefAudioQuality').value;
     enableSmartCache = document.getElementById('smartCacheToggle').checked;
     enableStreamOnly = document.getElementById('streamOnlyToggle').checked;
+    hideExplicitContent = document.getElementById('explicitToggle').checked;
 
     const tx = db.transaction('config', 'readwrite');
     await Promise.all([
@@ -7538,7 +7548,8 @@ async function saveIntegrationSettings() {
         tx.objectStore('config').put({ key: 'isLrclibEnabled', value: isLrclibEnabled }),
         tx.objectStore('config').put({ key: 'prefAudioQuality', value: prefAudioQuality }),
         tx.objectStore('config').put({ key: 'enableSmartCache', value: enableSmartCache }),
-        tx.objectStore('config').put({ key: 'enableStreamOnly', value: enableStreamOnly })
+        tx.objectStore('config').put({ key: 'enableStreamOnly', value: enableStreamOnly }),
+        tx.objectStore('config').put({ key: 'hideExplicitContent', value: hideExplicitContent })
     ]);
     
     toggletidalTab();
@@ -7603,7 +7614,7 @@ function toggletidalTab() {
                 else if (tidalFilter === 'tracks' && data.tracks) data = data.tracks;
 
                 const totalItems = data.totalNumberOfItems || 0;
-                const rawItems = data.items || [];
+                const rawItems = (data.items || []).filter(item => !hideExplicitContent || !item.explicit);
                 let newItems = [];
     
                 switch (tidalFilter) {
@@ -8060,7 +8071,8 @@ async function savetidalTrackToLibrary() {
             peak: songToSave.peak,
             bpm: songToSave.bpm,
             isrc: songToSave.isrc,
-            copyright: songToSave.copyright
+            copyright: songToSave.copyright,
+            explicit: songToSave.explicit
         };
         const songTx = db.transaction(['songs', 'musicFiles'], 'readwrite');
         songTx.objectStore('songs').put(newLocalSong);
@@ -8118,7 +8130,8 @@ async function batchSaveTidalTracks(tracks) {
                 playCount: 0,
                 vibrantColor: track.vibrantColor,
                 isrc: track.isrc,
-                copyright: track.copyright
+                copyright: track.copyright,
+                explicit: track.explicit
             };
             
             return { 
@@ -9503,6 +9516,7 @@ window.addEventListener("load", async () => {
         const qualityReq = configTx.objectStore('config').get('prefAudioQuality');
         const cacheReq = configTx.objectStore('config').get('enableSmartCache');
         const streamOnlyReq = configTx.objectStore('config').get('enableStreamOnly');
+        const explicitReq = configTx.objectStore('config').get('hideExplicitContent');
             
         const scIdResult = await new Promise(r => { scIdReq.onsuccess = () => r(scIdReq.result) });
         const scEnabledResult = await new Promise(r => { scEnabledReq.onsuccess = () => r(scEnabledReq.result) });
@@ -9546,7 +9560,8 @@ window.addEventListener("load", async () => {
         if(qualityRes) prefAudioQuality = qualityRes.value;
         if(cacheRes !== undefined) enableSmartCache = cacheRes.value;
         if(streamOnlyRes !== undefined) enableStreamOnly = streamOnlyRes.value;
-                
+        if(explicitReq.result !== undefined) hideExplicitContent = explicitReq.result.value;
+        
         if (istidalEnabled) {
             await findFastestHifiEndpoint();
         }
@@ -9617,7 +9632,7 @@ async function openContextFromPlayer(type) {
         function updatePlayerUI(song, progress = 0) {
             // musicTitle.textContent = sanitize(song.name);
             // musicArtist.textContent = song.artist;
-            musicTitle.innerHTML = `<span class="clickable" onclick="openContextFromPlayer('album')">${sanitize(song.name)}</span>`;
+            musicTitle.innerHTML = `<span class="clickable" onclick="openContextFromPlayer('album')">${sanitize(song.name)}</span>${getExplicitBadge(song.explicit)}`;
             musicArtist.innerHTML = `<span class="clickable" onclick="openContextFromPlayer('artist')">${sanitize(song.artist)}</span>`;
             updateTimeDisplays(progress, audioPlayer.duration);
 
