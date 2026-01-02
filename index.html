@@ -7,6 +7,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Streams</title>
     <link id="favicon" rel="icon" type="image/png" href="favicon.png">
+    <link rel="apple-touch-icon" href="streams.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,0">    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
@@ -390,7 +391,7 @@
             align-content: center;
             flex-direction: row;
             gap: 14px;
-            margin: 100px 0 0 0;
+            margin: 90px 0 0 0;
         }
 
         .toolbar::after {
@@ -403,8 +404,8 @@
             z-index: -2;
             backdrop-filter: blur(10px);
             background-color: var(--background-color-tr);
-            mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 50%, rgba(0, 0, 0, 0) 100%);
-            -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 50%, rgba(0, 0, 0, 0) 100%);
+            mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 60%, rgba(0, 0, 0, 0) 100%);
+            -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 60%, rgba(0, 0, 0, 0) 100%);
         }
 
         .tab-btn {
@@ -493,7 +494,7 @@
 
         #bottom-miniplayer {
             position: fixed;
-            bottom: 80px;
+            bottom: 90px;
             left: 50%;
             transform: translateX(-50%);
             width: 95%;
@@ -8351,8 +8352,8 @@ function setupMediaSessionActions() {
     navigator.mediaSession.setActionHandler('previoustrack', () => playPreviousSong());
     navigator.mediaSession.setActionHandler('stop', () => resetPlayer());
 
-    navigator.mediaSession.setActionHandler('seekforward', (d) => { audioPlayer.currentTime = Math.min(audioPlayer.currentTime + (d.seekOffset || 10), audioPlayer.duration); });
-    navigator.mediaSession.setActionHandler('seekbackward', (d) => { audioPlayer.currentTime = Math.max(audioPlayer.currentTime - (d.seekOffset || 10), 0); });
+    navigator.mediaSession.setActionHandler('seekforward', null);
+    navigator.mediaSession.setActionHandler('seekbackward', null);
     navigator.mediaSession.setActionHandler('seekto', (d) => { audioPlayer.currentTime = d.seekTime; });
 }
         
