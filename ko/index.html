@@ -5920,7 +5920,7 @@ async function deletePlaylist(playlistId) {
     const playlist = playlists.find(p => p.id === playlistId);
     if (!playlist) return;
 
-    if (await showConfirmDialog(`Are you sure you want to permanently delete the playlist "${playlist.name}"?`)) {
+    if (await showConfirmDialog(`"${playlist.name}" 재생 목록을 영구적으로 삭제하시겠습니까?`)) {
         // 1. Remove the playlist from the in-memory array.
         playlists = playlists.filter(p => p.id !== playlistId);
 
@@ -5950,7 +5950,7 @@ async function removeSongFromPlaylist(songId, playlistId, event) {
 
     // Prompt if NOT in edit mode
     if (!isPlaylistEditMode) {
-        const confirm = await showConfirmDialog(`Remove "${song.name}" from this playlist?`);
+        const confirm = await showConfirmDialog(`이 재생 목록에서 "${song.name}"을 제거하시겠습니까?`);
         if (!confirm) return;
     }
 
@@ -8499,7 +8499,7 @@ function disconnectAudioGraph() {
 }
         
 async function removeFolder(folderName) {
-    if (!await showConfirmDialog(`Are you sure you want to remove the folder "${folderName}"? All songs from this folder will be removed from your library.`)) {
+    if (!await showConfirmDialog(`"${folderName}" 폴더를 정말 삭제하시겠습니까? 이 폴더의 모든 노래가 라이브러리에서 제거됩니다.`)) {
         return;
     }
 
@@ -10127,7 +10127,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         document.getElementById('menuDeleteSong').addEventListener('click', async () => {
-            if (currentSongId && await showConfirmDialog('Delete this song? This is permanent.')) await deleteSong(currentSongId);
+            if (currentSongId && await showConfirmDialog('이 노래를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) await deleteSong(currentSongId);
             moreOptionsMenu.classList.remove('visible');
         });
         
@@ -10220,7 +10220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const file = e.target.files[0];
             if (!file) return;
 
-            if (!await showConfirmDialog("Importing will REPLACE your current library. All existing data will be lost. Continue?")) {
+            if (!await showConfirmDialog("가져오기 작업은 현재 라이브러리를 대체합니다. 기존 데이터는 모두 손실됩니다. 계속하시겠습니까?")) {
                 e.target.value = '';
                 return;
             }
