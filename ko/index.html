@@ -7136,7 +7136,8 @@ function addTidalTrackToQueue(trackId, position = 'last') {
         albumArt: getHighResArtwork(track.album?.cover),
         storage: 'tidal',
         duration: track.duration,
-        audioQuality: track.audioQuality
+        audioQuality: track.audioQuality,
+        explicit: track.explicit || false
     };
 
     if (playQueue.length === 0) {
@@ -8594,7 +8595,8 @@ async function playtidalTrack(trackId, playContext = null) {
             copyright: trackData.copyright, 
             vibrantColor: vibrantColor,
             peak: trackData.peak || null,
-            bpm: trackData.bpm || null
+            bpm: trackData.bpm || null,
+           explicit: trackData.explicit || false
         };
         
         currentlyPlayingSong = songObject;
