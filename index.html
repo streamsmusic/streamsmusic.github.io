@@ -3214,7 +3214,7 @@
         }
         
         function getExplicitBadge(isExplicit) {
-            return isExplicit ? `<span class="badge explicit" style="margin-left: 5px;">E</span>` : '';
+            return isExplicit ? ' 🅴' : '';
         }
 
         function openModal(modal) {
@@ -4345,7 +4345,7 @@ function updatePageTitle() {
         const song = currentlyPlayingSong;
         if (song) {
             const currentTime = formatTime(audioPlayer.currentTime);
-            document.title = `${currentTime} | ${sanitize(song.name)} • ${sanitize(song.artist)}`;
+            document.title = `${currentTime} | ${sanitize(song.name)}${getExplicitBadge(song.explicit)} • ${sanitize(song.artist)}`;
         }
     } else {
         document.title = 'Streams'; // Default title when no song is playing
@@ -5837,7 +5837,7 @@ function renderLibraryPage() {
                      <div class="song-info">
                         <img src="${song.albumArt}" class="album-thumbnail" style="width: 40px; height: 40px; scale: 1.2; border-radius: 8px; margin-right: 10px;">
                         <div>
-                            <div class="song-title" style="white-space: normal;">${sanitize(song.name)}</div>
+                            <div class="song-title" style="white-space: normal;">${sanitize(song.name)}${getExplicitBadge(song.explicit)}</div>
                             <div class="album-artist" style="font-size: 0.8em;">${sanitize(song.artist)}</div>
                         </div>
                     </div>
@@ -6682,7 +6682,7 @@ function renderQueue() {
             <div class="music-item queue-item ${song.id === currentSongId ? "active" : ""}" data-queue-index="${index}" data-id="${song.id}">
                 <div class="song-info">
                     <img src="${song.albumArt}" class="album-thumbnail" style="width: 40px; height: 40px; border-radius: 6px; margin: 0 5px;">
-                    <div class="song-title">${sanitize(song.name)}</div>
+                    <div class="song-title">${sanitize(song.name)}${getExplicitBadge(song.explicit)}</div>
                     <span class="song-artist-queue">${song.artist}</span>
                     <button class="remove-from-queue-btn" data-queue-index="${index}">
                         <span class="material-symbols-rounded" style="font-size: 14px;">cancel</span>
@@ -7376,7 +7376,7 @@ function updateMiniplayerUI(song, state) {
 
     miniplayer.classList.remove('hidden');
     miniplayerArt.src = song.albumArt;
-    miniplayerTitle.textContent = sanitize(song.name);
+    miniplayerTitle.textContent = sanitize(song.name) + getExplicitBadge(song.explicit);
     miniplayerArtist.textContent = sanitize(song.artist);
 
     let iconHtml;
@@ -7910,7 +7910,7 @@ async function openPlaylistView(playlistId, playlistTitle) {
                 <div class="music-item" data-track-id="${track.id}" style="cursor: pointer;">
                     <div class="song-info">
                         <span class="track-number">${index + 1}.</span>
-                        <div class="song-title">${sanitize(track.title)}</div>
+                        <div class="song-title">${sanitize(track.title)}${getExplicitBadge(track.explicit)}</div>
                     </div>
                     <div class="album-artist">${sanitize(track.artist?.name || track.artists?.[0]?.name || 'Unknown Artist')}</div>
                 </div>`).join('')}
@@ -7959,7 +7959,7 @@ async function openAlbumView(albumId, albumName, artistName) {
                 <div class="music-item" data-track-id="${track.id}" style="cursor: pointer;">
                     <div class="song-info">
                         <span class="track-number">${track.trackNumber}.</span>
-                        <div class="song-title">${sanitize(track.title)}</div>
+                        <div class="song-title">${sanitize(track.title)}${getExplicitBadge(track.explicit)}</div>
                     </div>
                 </div>`).join('')}
             </div>`;
@@ -9302,7 +9302,7 @@ async function updateMediaSessionMetadata(song) {
     // Phase 1: Immediately update text metadata, reusing the old artwork temporarily.
     // This prevents the notification from disappearing.
     const metadata = {
-        title: song.name,
+        title: song.name + getExplicitBadge(song.explicit),
         artist: song.artist,
         album: song.album,
     };
