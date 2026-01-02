@@ -3909,7 +3909,7 @@ async function appendRadioTracks() {
                             ${getPlaylistArtPlaceholder(playlistArt ? [playlistArt] : [])}
                             <div class="item-card-info">
                                 <div class="item-card-title">${sanitize(playlistTitle)}</div>
-                                <div class="item-card-subtitle">${trackCount}곡</div>
+                                <div class="item-card-subtitle">${trackCount}songs</div>
                             </div>
                         </div>`;
                     }).join('');
@@ -5849,7 +5849,7 @@ function renderLibraryPage() {
                     ${getPlaylistArtPlaceholder(arts)}
                     <div class="item-card-info">
                         <div class="item-card-title">${sanitize(p.name)}</div>
-                        <div class="item-card-subtitle">${playlistSongs.length} 곡</div>
+                        <div class="item-card-subtitle">${playlistSongs.length} songs</div>
                     </div>
                 </div>`;
             }).join('');
@@ -5903,7 +5903,7 @@ function renderPlaylists() {
                 ${getPlaylistArtPlaceholder(arts, "album-thumbnail")}
                 <div style="padding-left: 5px;">
                     <div class="song-title" style="font-size: 1em; margin-bottom: 2px; white-space: normal;">${playlist.name}</div>
-                    <div class="album-artist" style="font-size: 0.8em;">${playlistSongs.length} 곡</div>
+                    <div class="album-artist" style="font-size: 0.8em;">${playlistSongs.length} songs</div>
                 </div>
             </div>
             <button class="remove-from-queue-btn" onclick="deletePlaylist(${playlist.id}, event)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%);">
