@@ -725,6 +725,7 @@
             backdrop-filter: blur(8px);
             font-size: 14px;
             outline: none;
+
         }
         
         .search-icon {
@@ -2036,7 +2037,7 @@
                 transform: translateY(-50%);
                 pointer-events: auto;
                 filter: none;
-                padding: 0;
+                padding: 0 10px;
             }
 
             .lyrics-container {
@@ -2208,7 +2209,7 @@
         }
 
         .hitpoint-drawer-handle-player {
-            padding: 20px;
+            padding: 10px;
             position: absolute;
             top: env(safe-area-inset-top);
             left: 50%;
@@ -2501,7 +2502,7 @@
         <!-- Home page content will be rendered here -->
         <div class="loading-message"><svg width="24" height="24" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="color: var(--text-color);"><style>.spinner_V8m1{transform-origin:center;animation:spinner_zKoa 2s linear infinite}.spinner_V8m1 circle{stroke-linecap:round;animation:spinner_YpZS 1.5s ease-in-out infinite}@keyframes spinner_zKoa{100%{transform:rotate(360deg)}}@keyframes spinner_YpZS{0%{stroke-dasharray:0 150;stroke-dashoffset:0}47.5%{stroke-dasharray:42 150;stroke-dashoffset:-16}95%,100%{stroke-dasharray:42 150;stroke-dashoffset:-59}}</style><g class="spinner_V8m1"><circle cx="12" cy="12" r="9.5" fill="none" stroke-width="3"></circle></g></svg></div>
     </div>
-    <div id="library-view" class="view-container" style="display: none; padding-top: 80px;">
+    <div id="library-view" class="view-container" style="display: none; padding-top: calc(80px + env(safe-area-inset-top));">
         <div class="page-content-wrapper">
             <div class="library-controls" id="library-controls">
                 <div class="filter-container">
@@ -2526,7 +2527,7 @@
     </div>
     <div id="radio-view" class="view-container" style="display: none;">
         <div class="page-content-wrapper">
-            <div class="search-container" style="position: absolute; width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
+            <div class="search-container" style="position: absolute; top: calc(80px + env(safe-area-inset-top)); width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
                 <span class="material-symbols-rounded search-icon" style="padding-left: 2px;">play_circle</span>
                 <input type="text" id="radioSearchInput" placeholder="Start a station" class="library-search-input" style="box-shadow: var(--sun-shadow), 0 0 15px rgba(0, 0, 0, 0.05); padding: 12px 17px 12px 42px;">
             </div>
@@ -2539,7 +2540,7 @@
             </div>
         </div>
     </div>
-    <div id="tidal-view" class="view-container" style="display: none; padding-top: 80px;">
+    <div id="tidal-view" class="view-container" style="display: none; calc(80px + env(safe-area-inset-top));">
         <div class="page-content-wrapper">
             <div class="library-controls" id="tidal-controls">
                 <div class="filter-container" id="tidal-filter-container">
@@ -2558,7 +2559,7 @@
                 </div>
             </div>
             
-            <div class="search-container" id="tidal-search-container" style="position: absolute; width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
+            <div class="search-container" id="tidal-search-container" style="position: absolute; top: calc(80px + env(safe-area-inset-top)); width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
                 <span class="material-symbols-rounded search-icon" style="padding-left: 2px;">search</span>
                 <input type="text" id="tidalSearchInput" placeholder="Search" class="library-search-input" style="box-shadow: var(--sun-shadow), 0 0 15px rgba(0, 0, 0, 0.05); padding: 12px 17px 12px 42px;">
             </div>
@@ -2568,18 +2569,18 @@
                 <div id="tidal-trending-grid" class="item-grid"></div>
             </div>
             
-            <div id="tidal-results-grid" class="item-grid" style="padding-top: 60px; padding-bottom: 240px;">
+            <div id="tidal-results-grid" class="item-grid" style="padding-top: calc(60px + env(safe-area-inset-top)); padding-bottom: 240px;">
                 <!-- tidal search/offline results will be rendered here -->
             </div>
         </div>
     </div>
     <div id="search-view" class="view-container" style="display: none;">
         <div class="page-content-wrapper">
-            <div class="search-container" style="position: absolute; width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
+            <div class="search-container" style="position: absolute; top: calc(80px + env(safe-area-inset-top)); width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
                 <span class="material-symbols-rounded search-icon" style="padding-left: 2px;">search</span>
                 <input type="text" id="searchInput" placeholder="Search your owned items" class="library-search-input" style="box-shadow: var(--sun-shadow), 0 0 15px rgba(0, 0, 0, 0.05); padding: 12px 17px 12px 42px;">
             </div>
-            <div id="search-results-grid" class="item-grid" style="padding-top: 60px;">
+            <div id="search-results-grid" class="item-grid" style="padding-top: calc(60px + env(safe-area-inset-top));">
                 <!-- Search results will be rendered here -->
             </div>
         </div>
