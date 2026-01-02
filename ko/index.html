@@ -2522,7 +2522,7 @@
                 <div class="filter-container">
                     <button class="filter-btn active" data-filter="albums">앨범</button>
                     <button class="filter-btn" data-filter="artists">아티스트</button>
-                    <button class="filter-btn" data-filter="songs">노래</button>
+                    <button class="filter-btn" data-filter="songs">곡</button>
                     <button class="filter-btn" data-filter="playlists">재생목록</button>
                 </div>
                 <div class="view-controls">
@@ -2560,7 +2560,7 @@
                 <div class="filter-container" id="tidal-filter-container">
                     <button class="filter-btn-sc" data-filter="albums">앨범</button>
                     <button class="filter-btn-sc" data-filter="artists">아티스트</button>
-                    <button class="filter-btn-sc active" data-filter="tracks">노래</button>
+                    <button class="filter-btn-sc active" data-filter="tracks">곡</button>
                     <button class="filter-btn-sc" data-filter="playlists">재생목록</button>
                 </div>
                 <div class="search-container" id="tidal-offline-search-container" style="display: none; max-width: 246px; margin: 0px;">
@@ -7988,7 +7988,7 @@ function openLocalAlbumView(artistName, albumName) {
                            .sort((a,b) => (a.trackNumber || 0) - (b.trackNumber || 0));
 
     if (albumSongs.length === 0) {
-        openDrawer(albumName, artistName, `<div class="no-results"><p>이 로컬 앨범에 대한 노래가 없습니다.</p></div>`);
+        openDrawer(albumName, artistName, `<div class="no-results"><p>이 로컬 앨범에 대한 곡가 없습니다.</p></div>`);
         return;
     }
     
@@ -8093,7 +8093,7 @@ async function savetidalTrackToLibrary() {
         showToast(`추가됨 "${songToSave.name}"`);
     } catch (error) {
         console.error("Failed to save track to library:", error);
-        showToast("노래를 추가할 수 없습니다");
+        showToast("곡를 추가할 수 없습니다");
     }
 }
 
@@ -8683,7 +8683,7 @@ function disconnectAudioGraph() {
 }
         
 async function removeFolder(folderName) {
-    if (!await showConfirmDialog(`"${folderName}" 폴더를 정말 삭제하시겠습니까? 이 폴더의 모든 노래가 라이브러리에서 제거됩니다.`)) {
+    if (!await showConfirmDialog(`"${folderName}" 폴더를 정말 삭제하시겠습니까? 이 폴더의 모든 곡가 라이브러리에서 제거됩니다.`)) {
         return;
     }
 
@@ -10288,7 +10288,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         moreButton.addEventListener('click', (e) => {
             e.stopPropagation();
             if (!currentSongId || !currentlyPlayingSong) {
-                showToast('현재 재생 중인 노래가 없습니다');
+                showToast('현재 재생 중인 곡가 없습니다');
                 return;
             }
             
@@ -10313,7 +10313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
         document.getElementById('menuDeleteSong').addEventListener('click', async () => {
-            if (currentSongId && await showConfirmDialog('이 노래를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) await deleteSong(currentSongId);
+            if (currentSongId && await showConfirmDialog('이 곡를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) await deleteSong(currentSongId);
             moreOptionsMenu.classList.remove('visible');
         });
         
@@ -10642,10 +10642,10 @@ document.getElementById('uploadBtn').addEventListener('click', async () => {
             }
 
             if (filesToAdd.length > 0) {
-                showToast(`${filesToAdd.length}개의 새 노래가 라이브러리에 추가되었습니다`);
+                showToast(`${filesToAdd.length}개의 새 곡가 라이브러리에 추가되었습니다`);
                 await addSongs(filesToAdd, 'filesystem');
             } else {
-                showToast('선택한 디렉터리에서 새 노래를 찾지 못했습니다');
+                showToast('선택한 디렉터리에서 새 곡를 찾지 못했습니다');
             }
         }
 
@@ -10758,7 +10758,7 @@ async function loadSongsAndPlaylists() {
                 triggerAutoSync();
                 showToast(`"${playlist.name}"에 추가됨`);
             } else {
-                showToast(`이 노래는 이미 "${playlist.name}"에 있습니다.`);
+                showToast(`이 곡는 이미 "${playlist.name}"에 있습니다.`);
             }
             closeModal(playlistModal);
         }
