@@ -2990,8 +2990,8 @@
         let touchTarget = null;
         let hls = null; // To hold the Hls.js instance
         let castSession = null;
-        let castPlayer = new cast.framework.RemotePlayer();
-        let castController = new cast.framework.RemotePlayerController(castPlayer);
+        let castPlayer = null;
+        let castController = null;
         let audioContext;
         let analyser;
         let isVisualizerInitialized = false;
@@ -9187,30 +9187,35 @@ function setupMediaSessionActions() {
 
 window.__onGCastApiAvailable = function(isAvailable) {
     if (isAvailable) {
+        castPlayer = new cast.framework.RemotePlayer();
+        castController = new cast.framework.RemotePlayerController(castPlayer);
+
         cast.framework.CastContext.getInstance().setOptions({
             receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
             autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
         });
-        const context = cast.framework.CastContext.getInstance();
         
-        // Listener to sync local UI with Remote Player state
-        castController.addEventListener(cast.framework.CastContextEventType.ANY_CHANGE, () => {
-            if (!castSession) return;
-            // Sync Play/Pause icon
-            playPauseIcon.textContent = castPlayer.isPaused ? 'play_arrow' : 'pause';
-            playPauseBtn.classList.toggle('playing', !castPlayer.isPaused);
-            updateMiniplayerUI(currentlyPlayingSong, castPlayer.isPaused ? 'paused' : 'playing');
-            
-            // Sync Progress
-            const duration = castPlayer.duration || currentlyPlayingSong?.duration || 0;
-            if (duration > 0) {
-                const percent = (castPlayer.currentTime / duration) * 100;
-                progress.style.width = `${percent}%`;
-                updateTimeDisplays(castPlayer.currentTime, duration);
-            }
-        });
+        setupCastListeners();
     }
 };
+
+function setupCastListeners() {
+    context.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, (e) => {
+        if (!castSession) return;
+        // Sync Play/Pause icon
+        playPauseIcon.textContent = castPlayer.isPaused ? 'play_arrow' : 'pause';
+        playPauseBtn.classList.toggle('playing', !castPlayer.isPaused);
+        updateMiniplayerUI(currentlyPlayingSong, castPlayer.isPaused ? 'paused' : 'playing');
+        
+        // Sync Progress
+        const duration = castPlayer.duration || currentlyPlayingSong?.duration || 0;
+        if (duration > 0) {
+            const percent = (castPlayer.currentTime / duration) * 100;
+            progress.style.width = `${percent}%`;
+            updateTimeDisplays(castPlayer.currentTime, duration);
+        }
+    });
+}
 
 async function loadRemoteMedia() {
     if (!castSession || !currentlyPlayingSong) return;
