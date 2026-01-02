@@ -385,7 +385,7 @@
             transition: top 0.3s ease;
             width: 100%;
             flex-wrap: wrap;
-            height: 160px;
+            height: calc(140px + env(safe-area-inset-bottom));
         }
 
         .toolbar.hidden {
@@ -402,7 +402,7 @@
             align-content: center;
             flex-direction: row;
             gap: 14px;
-            margin: 90px 0 0 0;
+            margin: calc(90px - env(safe-area-inset-bottom)) 0 0 0;
         }
 
         .toolbar::after {
@@ -504,7 +504,7 @@
 
         #bottom-miniplayer {
             position: fixed;
-            bottom: 90px;
+            bottom: calc(60px + env(safe-area-inset-bottom));
             left: 50%;
             transform: translateX(-50%);
             width: 95%;
