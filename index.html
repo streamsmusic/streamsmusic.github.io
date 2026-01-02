@@ -8508,15 +8508,24 @@ async function playtidalTrack(trackId, playContext = null) {
         
         // If not in cache, proceed with the original online logic
         // Check playQueue as well to support Radio tracks
-        const trackData = lasttidalSearchResults.find(t => t.id === numericTrackId) ||
+        let trackData = lasttidalSearchResults.find(t => t.id === numericTrackId) ||
                           currentDrawerContext.find(t => t.id === numericTrackId) ||
                           browseContext.find(t => t.id === numericTrackId) || // Check browse context
                           playQueue.find(t => t.id === numericTrackId);
 
         if (!trackData) {
+            try {
+                const infoRes = await fetchHifi(`/info/?id=${numericTrackId}`, { signal });
+                if (infoRes.ok) {
+                    const infoJson = await infoRes.json();
+                    trackData = infoJson.data;
+                }
+            } catch (e) { console.warn("Failed to fetch track info", e); }
+        }
+
+        if (!trackData) {
             console.error("Track ID not found in any context:", numericTrackId);
-            console.log("Queue IDs:", playQueue.map(s => s.id));
-            throw new Error("Track not found in search results, queue, or cache");
+            throw new Error("Track not found in contexts or API info");
         }
 
         if (trackData.isrc && isrcToLocalSongMap.has(trackData.isrc)) {
@@ -8549,8 +8558,8 @@ async function playtidalTrack(trackId, playContext = null) {
             isrc: trackData.isrc, 
             copyright: trackData.copyright, 
             vibrantColor: vibrantColor,
-            peak: trackData.peak,
-            bpm: trackData.bpm
+            peak: trackData.peak || null,
+            bpm: trackData.bpm || null
         };
         
         currentlyPlayingSong = songObject;
