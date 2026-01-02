@@ -7124,13 +7124,17 @@ async function playSong(song, playContext = null) {
         }
 
         const isHlsStream = song.streamUrl && song.streamUrl.includes('.m3u8');
-        const isCrossOriginStream = song.storage === 'tidal' && !song.blobUrl;
+        const isBlob = fileUrl.startsWith('blob:');
         
-        if (isCrossOriginStream) {
-            // FIX: Never enforce CORS on streams. If the CDN doesn't send the header, 
-            // playback fails entirely. Better to play "opaque" (no visualizer) than fail.
+        if (isBlob) {
+            // Blobs are same-origin; we can connect the visualizer safely
             audioPlayer.removeAttribute('crossorigin');
-            disconnectAudioGraph();
+            connectAudioGraph();
+        } else if (song.storage === 'tidal') {
+            // Direct CDN URL: Enforcing anonymous CORS is required for Web Audio processing
+            // but if the server doesn't support it, we must disconnect the graph to hear audio
+            audioPlayer.crossOrigin = "anonymous";
+            connectAudioGraph();
         } else {
             audioPlayer.removeAttribute('crossorigin');
             connectAudioGraph();
@@ -8218,8 +8222,8 @@ async function processAndCacheAudio(songObject, signal = null) {
         };
 
         // 3. Check Stream Only Mode Setting
-        // Only write to DB if Stream Only is FALSE
-        if (typeof enableStreamOnly === 'undefined' || !enableStreamOnly) {
+        // Only write to DB if Stream Only is FALSE and we aren't just processing for immediate play
+        if (!enableStreamOnly) {
             const tx = db.transaction('tidalCache', 'readwrite');
             tx.objectStore('tidalCache').put(cacheEntry);
             await tx.done;
@@ -8411,12 +8415,9 @@ async function playtidalTrack(trackId, playContext = null) {
 
         console.log("Track not cached. Resolving stream URL...");
         
-        // Logic: 
-        // 1. iOS: Always stream (Web Audio is disabled, so opaque streams play fine and load fast).
-        // 2. Stream Only Mode: Always stream.
-        // 3. Desktop/Android: Default to Cache/Download. Streaming opaque audio results in silence 
-        //    due to Web Audio "hijacking" the element. We need a CORS-safe Blob to have sound + visualizer.
-        const shouldStreamDirectly = isIOS || (typeof enableStreamOnly !== 'undefined' && enableStreamOnly);
+        // Only stream direct URLs on iOS (where visualizers are disabled).
+        // On Desktop/Android, we MUST use Blobs to bypass CORS silencing for Web Audio processing.
+        const shouldStreamDirectly = isIOS;
 
         let streamData = null;
         if (shouldStreamDirectly) {
