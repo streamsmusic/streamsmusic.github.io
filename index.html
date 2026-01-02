@@ -8717,7 +8717,14 @@ async function openContextFromPlayer(type) {
 
         function updateTimeDisplays(current = 0, duration = 0) {
             currentTimeDisplay.textContent = formatTime(current);
-            durationDisplay.textContent = formatTime(duration);
+            
+            // Show remaining time instead of total duration
+            if (isFinite(duration) && duration > 0) {
+                const remaining = Math.max(0, duration - current);
+                durationDisplay.textContent = '-' + formatTime(remaining);
+            } else {
+                durationDisplay.textContent = formatTime(duration);
+            }
         }
 
 let lastActiveIndex = -1;
