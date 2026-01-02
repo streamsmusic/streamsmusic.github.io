@@ -3266,6 +3266,245 @@ function closeDrawer() {
         drawerContent.innerHTML = '';
     }, 400);
 }
+
+// --- Google Drive Sync Logic ---
+let tokenClient;
+let gAccessToken = null;
+let gTokenExpiry = 0;
+let tokenRequestResolver = null; // Promise resolver for async auth
+const SYNC_FILENAME = 'streams_library_metadata.json';
+
+function initGoogleClient(clientId) {
+    if (tokenClient) return;
+    
+    tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/drive.file',
+        callback: (response) => {
+            if (response.error !== undefined) {
+                console.error(response);
+                showToast("Google Auth Error");
+                return;
+            }
+            
+            // 1. Save Token & Expiry (Persistent Session)
+            gAccessToken = response.access_token;
+            // expires_in is in seconds. Buffer by removing 60s to be safe.
+            gTokenExpiry = Date.now() + (response.expires_in * 1000) - 60000;
+            
+            localStorage.setItem('gDriveToken', gAccessToken);
+            localStorage.setItem('gDriveExpiry', gTokenExpiry);
+            
+            updateDriveUI(true);
+
+            // 2. Resolve pending promise if we were waiting for a token
+            if (tokenRequestResolver) {
+                tokenRequestResolver(gAccessToken);
+                tokenRequestResolver = null;
+            }
+        },
+    });
+}
+
+function updateDriveUI(isConnected) {
+    if (isConnected) {
+        document.getElementById('gDriveStatus').textContent = "Connected. Ready to sync.";
+        document.getElementById('gDriveLoginBtn').style.display = 'none';
+        document.getElementById('gDriveSyncBtn').style.display = 'flex';
+        document.getElementById('gDriveClientId').disabled = true;
+    } else {
+        document.getElementById('gDriveStatus').textContent = "Not connected";
+        document.getElementById('gDriveLoginBtn').style.display = 'flex';
+        document.getElementById('gDriveSyncBtn').style.display = 'none';
+        document.getElementById('gDriveClientId').disabled = false;
+    }
+}
+
+// Async helper to ensure we have a valid token before syncing
+function getValidToken() {
+    return new Promise((resolve, reject) => {
+        // 1. Check if current token is valid
+        if (gAccessToken && Date.now() < gTokenExpiry) {
+            resolve(gAccessToken);
+            return;
+        }
+
+        // 2. If no client (config missing), fail
+        if (!tokenClient) {
+            const clientId = document.getElementById('gDriveClientId').value.trim();
+            if(clientId) initGoogleClient(clientId);
+            else {
+                showToast("Configure Google Client ID first");
+                reject("No Client ID");
+                return;
+            }
+        }
+
+        // 3. Token expired or missing: Request new one (Popup)
+        console.log("Token expired or missing, requesting new one...");
+        tokenRequestResolver = resolve;
+        // 'hint' can speed up re-auth if they are already signed in
+        tokenClient.requestAccessToken({ prompt: '' }); 
+    });
+}
+
+document.getElementById('gDriveLoginBtn').addEventListener('click', () => {
+    const clientId = document.getElementById('gDriveClientId').value.trim();
+    if (!clientId) return showToast("Please enter a Google Client ID");
+    
+    initGoogleClient(clientId);
+    tokenClient.requestAccessToken();
+});
+
+async function syncLibraryToDrive(interactive = false) {
+    // Auto-sync shouldn't trigger popup if completely logged out, 
+    // but if we have a client ID and had a session, we try.
+    if (!interactive && !gAccessToken) return;
+
+    if (interactive) showToast("Syncing with Drive...");
+    else console.log("Auto-syncing library...");
+    
+    try {
+        // Ensure we have a valid token (handles refresh/popup)
+        await getValidToken(); 
+        // Token is now in gAccessToken
+
+        // 1. Export local data
+        const tx = db.transaction(['songs', 'playlists', 'playHistory'], 'readonly');
+        const [songsData, playlistsData, historyData] = await Promise.all([
+            promiseIDBRequest(tx.objectStore('songs').getAll()),
+            promiseIDBRequest(tx.objectStore('playlists').getAll()),
+            promiseIDBRequest(tx.objectStore('playHistory').getAll())
+        ]);
+
+        let mergedSongs = songsData;
+        let mergedPlaylists = playlistsData;
+        let mergedHistory = historyData;
+
+        // 2. Find existing file
+        const q = `name = '${SYNC_FILENAME}' and trashed = false`;
+        const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}`, {
+            headers: { 'Authorization': `Bearer ${gAccessToken}` }
+        });
+        const searchData = await searchRes.json();
+        const file = searchData.files && searchData.files.length > 0 ? searchData.files[0] : null;
+
+        if (file) {
+            // 3. Download cloud data
+            const downloadRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+                headers: { 'Authorization': `Bearer ${gAccessToken}` }
+            });
+            
+            if (downloadRes.ok) {
+                const cloudData = await downloadRes.json();
+                
+                // 4. Merge Logic (Union of Local and Cloud)
+                
+                // Merge Songs (Deduplicate by ID for Tidal, Artist+Name for Local)
+                const songMap = new Map();
+                const getSongKey = (s) => {
+                    if (s.storage === 'tidal') return `tidal:${s.id}`;
+                    // Clean up strings to ensure good matching for local files
+                    return `local:${(s.artist||'').toLowerCase().trim()}:${(s.name||'').toLowerCase().trim()}`;
+                };
+
+                // Add Cloud first
+                if (cloudData.songs) cloudData.songs.forEach(s => songMap.set(getSongKey(s), s));
+                // Overwrite/Add Local (Local takes priority for metadata edits like lyrics)
+                songsData.forEach(s => songMap.set(getSongKey(s), s));
+                mergedSongs = Array.from(songMap.values());
+
+                // Merge Playlists (ID based merge)
+                const plMap = new Map();
+                if (cloudData.playlists) cloudData.playlists.forEach(p => plMap.set(p.id, p));
+                playlistsData.forEach(p => plMap.set(p.id, p));
+                mergedPlaylists = Array.from(plMap.values());
+
+                // Merge History (Union by timestamp)
+                const histMap = new Map();
+                if (cloudData.history) cloudData.history.forEach(h => histMap.set(h.timestamp, h));
+                historyData.forEach(h => histMap.set(h.timestamp, h));
+                mergedHistory = Array.from(histMap.values()).sort((a,b) => b.timestamp - a.timestamp).slice(0, 1000);
+
+                // 5. Update Local Database with Merged Data
+                await restoreFromData({ songs: mergedSongs, playlists: mergedPlaylists, history: mergedHistory });
+                console.log("Local library updated with merged Cloud data.");
+            }
+        }
+
+        // 6. Upload Merged Data (Push back to Cloud)
+        const finalExport = {
+            timestamp: Date.now(),
+            songs: mergedSongs,
+            playlists: mergedPlaylists,
+            history: mergedHistory
+        };
+
+        const fileContent = JSON.stringify(finalExport);
+        const metadata = {
+            name: SYNC_FILENAME,
+            mimeType: 'application/json'
+        };
+
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('file', new Blob([fileContent], { type: 'application/json' }));
+
+        let uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+        let method = 'POST';
+
+        if (file) {
+            uploadUrl = `https://www.googleapis.com/upload/drive/v3/files/${file.id}?uploadType=multipart`;
+            method = 'PATCH';
+        }
+
+        const uploadRes = await fetch(uploadUrl, {
+            method: method,
+            headers: { 'Authorization': `Bearer ${gAccessToken}` },
+            body: form
+        });
+
+        if (uploadRes.ok) {
+            if (interactive) showToast("Library synced (Merged).");
+            const statusEl = document.getElementById('gDriveStatus');
+            if (statusEl) statusEl.textContent = `Last sync: ${new Date().toLocaleTimeString()}`;
+        } else {
+            throw new Error("Upload failed");
+        }
+
+    } catch (e) {
+        console.error("Drive Sync Error:", e);
+        if (interactive) showToast("Sync failed. See console.");
+    }
+}
+
+// Helper to reuse import logic
+async function restoreFromData(data) {
+    const tx = db.transaction(['songs', 'playlists', 'playHistory'], 'readwrite');
+    await Promise.all([
+        tx.objectStore('songs').clear(),
+        tx.objectStore('playlists').clear(),
+        tx.objectStore('playHistory').clear()
+    ]);
+
+    const songStore = tx.objectStore('songs');
+    for (const song of data.songs) songStore.put(song);
+    
+    if (data.playlists) {
+        const plStore = tx.objectStore('playlists');
+        for (const pl of data.playlists) plStore.put(pl);
+    }
+    if (data.history) {
+        const histStore = tx.objectStore('playHistory');
+        for (const h of data.history) histStore.put(h);
+    }
+    await tx.done;
+    
+    await loadSongsAndPlaylists();
+    if (activeView === 'library') renderLibraryPage();
+    if (activeView === 'home') renderHomePage();
+    restoreTidalDownloads(data.songs);
+}
         
 let syncDebounceTimer;
 function triggerAutoSync() {
@@ -8873,12 +9112,34 @@ window.addEventListener("load", async () => {
         const qualityRes = await new Promise(r => { qualityReq.onsuccess = () => r(qualityReq.result) });
         const cacheRes = await new Promise(r => { cacheReq.onsuccess = () => r(cacheReq.result) });
         const streamOnlyRes = await new Promise(r => { streamOnlyReq.onsuccess = () => r(streamOnlyReq.result) });
-
-        // Load Google Client ID
+        
+        // Load Google Client ID & Restore Session
         const gClientIdReq = configTx.objectStore('config').get('gDriveClientId');
         const gClientIdRes = await new Promise(r => { gClientIdReq.onsuccess = () => r(gClientIdReq.result) });
-        if (gClientIdRes) document.getElementById('gDriveClientId').value = gClientIdRes.value;
         
+        if (gClientIdRes && gClientIdRes.value) {
+            const savedId = gClientIdRes.value;
+            document.getElementById('gDriveClientId').value = savedId;
+            
+            // Initialize Client
+            if (typeof google !== 'undefined') {
+                initGoogleClient(savedId);
+                
+                // Restore Token from Storage
+                const storedToken = localStorage.getItem('gDriveToken');
+                const storedExpiry = localStorage.getItem('gDriveExpiry');
+                
+                if (storedToken && storedExpiry) {
+                    const expiryTime = parseInt(storedExpiry);
+                    // Only restore if valid (or close to valid, let getValidToken handle refresh if old)
+                    // We visually restore state even if expired, so the user sees "Connected"
+                    gAccessToken = storedToken;
+                    gTokenExpiry = expiryTime;
+                    updateDriveUI(true);
+                }
+            }
+        }
+
         tidalClientId = scIdResult ? scIdResult.value : '';
         istidalEnabled = scEnabledResult ? scEnabledResult.value : false;
         isCorsProxyEnabled = corsProxyResult ? corsProxyResult.value : false;
@@ -9653,179 +9914,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             await tx.done;
             saveIntegrationSettings();
         });
-        
-        // --- Google Drive Sync Logic ---
-        let tokenClient;
-        let gAccessToken = null;
-        const SYNC_FILENAME = 'streams_library_metadata.json';
-
-        document.getElementById('gDriveLoginBtn').addEventListener('click', () => {
-            const clientId = document.getElementById('gDriveClientId').value.trim();
-            if (!clientId) return showToast("Please enter a Google Client ID");
-
-            if (!tokenClient) {
-                tokenClient = google.accounts.oauth2.initTokenClient({
-                    client_id: clientId,
-                    scope: 'https://www.googleapis.com/auth/drive.file',
-                    callback: (response) => {
-                        if (response.error !== undefined) {
-                            throw (response);
-                        }
-                        gAccessToken = response.access_token;
-                        document.getElementById('gDriveStatus').textContent = "Connected. Ready to sync.";
-                        document.getElementById('gDriveLoginBtn').style.display = 'none';
-                        document.getElementById('gDriveSyncBtn').style.display = 'flex';
-                        document.getElementById('gDriveClientId').disabled = true;
-                    },
-                });
-            }
-            tokenClient.requestAccessToken();
-        });
-
-        document.getElementById('gDriveSyncBtn').addEventListener('click', () => syncLibraryToDrive(true));
-
-        async function syncLibraryToDrive(interactive = false) {
-            if (!gAccessToken) return;
-            if (interactive) showToast("Syncing...");
-            else console.log("Auto-syncing library...");
-            
-            try {
-                // 1. Export local data
-                const tx = db.transaction(['songs', 'playlists', 'playHistory'], 'readonly');
-                const [songsData, playlistsData, historyData] = await Promise.all([
-                    promiseIDBRequest(tx.objectStore('songs').getAll()),
-                    promiseIDBRequest(tx.objectStore('playlists').getAll()),
-                    promiseIDBRequest(tx.objectStore('playHistory').getAll())
-                ]);
-
-                let mergedSongs = songsData;
-                let mergedPlaylists = playlistsData;
-                let mergedHistory = historyData;
-
-                // 2. Find existing file
-                const q = `name = '${SYNC_FILENAME}' and trashed = false`;
-                const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}`, {
-                    headers: { 'Authorization': `Bearer ${gAccessToken}` }
-                });
-                const searchData = await searchRes.json();
-                const file = searchData.files && searchData.files.length > 0 ? searchData.files[0] : null;
-
-                if (file) {
-                    // 3. Download cloud data
-                    const downloadRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
-                        headers: { 'Authorization': `Bearer ${gAccessToken}` }
-                    });
-                    
-                    if (downloadRes.ok) {
-                        const cloudData = await downloadRes.json();
-                        
-                        // 4. Merge Logic (Union of Local and Cloud)
-                        
-                        // Merge Songs (Deduplicate by ID for Tidal, Artist+Name for Local)
-                        const songMap = new Map();
-                        const getSongKey = (s) => {
-                            if (s.storage === 'tidal') return `tidal:${s.id}`;
-                            // Clean up strings to ensure good matching for local files
-                            return `local:${(s.artist||'').toLowerCase().trim()}:${(s.name||'').toLowerCase().trim()}`;
-                        };
-
-                        // Add Cloud first
-                        if (cloudData.songs) cloudData.songs.forEach(s => songMap.set(getSongKey(s), s));
-                        // Overwrite/Add Local (Local takes priority for metadata edits like lyrics)
-                        songsData.forEach(s => songMap.set(getSongKey(s), s));
-                        mergedSongs = Array.from(songMap.values());
-
-                        // Merge Playlists (ID based merge)
-                        const plMap = new Map();
-                        if (cloudData.playlists) cloudData.playlists.forEach(p => plMap.set(p.id, p));
-                        playlistsData.forEach(p => plMap.set(p.id, p));
-                        mergedPlaylists = Array.from(plMap.values());
-
-                        // Merge History (Union by timestamp)
-                        const histMap = new Map();
-                        if (cloudData.history) cloudData.history.forEach(h => histMap.set(h.timestamp, h));
-                        historyData.forEach(h => histMap.set(h.timestamp, h));
-                        mergedHistory = Array.from(histMap.values()).sort((a,b) => b.timestamp - a.timestamp).slice(0, 1000);
-
-                        // 5. Update Local Database with Merged Data
-                        await restoreFromData({ songs: mergedSongs, playlists: mergedPlaylists, history: mergedHistory });
-                        console.log("Local library updated with merged Cloud data.");
-                    }
-                }
-
-                // 6. Upload Merged Data (Push back to Cloud)
-                const finalExport = {
-                    timestamp: Date.now(),
-                    songs: mergedSongs,
-                    playlists: mergedPlaylists,
-                    history: mergedHistory
-                };
-
-                const fileContent = JSON.stringify(finalExport);
-                const metadata = {
-                    name: SYNC_FILENAME,
-                    mimeType: 'application/json'
-                };
-
-                const form = new FormData();
-                form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-                form.append('file', new Blob([fileContent], { type: 'application/json' }));
-
-                let uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-                let method = 'POST';
-
-                if (file) {
-                    uploadUrl = `https://www.googleapis.com/upload/drive/v3/files/${file.id}?uploadType=multipart`;
-                    method = 'PATCH';
-                }
-
-                const uploadRes = await fetch(uploadUrl, {
-                    method: method,
-                    headers: { 'Authorization': `Bearer ${gAccessToken}` },
-                    body: form
-                });
-
-                if (uploadRes.ok) {
-                    if (interactive) showToast("Library synced (Merged).");
-                    const statusEl = document.getElementById('gDriveStatus');
-                    if (statusEl) statusEl.textContent = `Last sync: ${new Date().toLocaleTimeString()}`;
-                } else {
-                    throw new Error("Upload failed");
-                }
-
-            } catch (e) {
-                console.error("Drive Sync Error:", e);
-                if (interactive) showToast("Sync failed. See console.");
-            }
-        }
-
-        // Helper to reuse import logic
-        async function restoreFromData(data) {
-            const tx = db.transaction(['songs', 'playlists', 'playHistory'], 'readwrite');
-            await Promise.all([
-                tx.objectStore('songs').clear(),
-                tx.objectStore('playlists').clear(),
-                tx.objectStore('playHistory').clear()
-            ]);
-
-            const songStore = tx.objectStore('songs');
-            for (const song of data.songs) songStore.put(song);
-            
-            if (data.playlists) {
-                const plStore = tx.objectStore('playlists');
-                for (const pl of data.playlists) plStore.put(pl);
-            }
-            if (data.history) {
-                const histStore = tx.objectStore('playHistory');
-                for (const h of data.history) histStore.put(h);
-            }
-            await tx.done;
-            
-            await loadSongsAndPlaylists();
-            if (activeView === 'library') renderLibraryPage();
-            if (activeView === 'home') renderHomePage();
-            restoreTidalDownloads(data.songs);
-        }
 
         document.getElementById('saveIntegrations').addEventListener('click', saveIntegrationSettings);
 
