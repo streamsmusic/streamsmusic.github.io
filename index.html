@@ -146,7 +146,7 @@
             --background-color-light-tr-highcontrast: #f0f0f0;
             --text-color-light-highcontrast: #333333;
             --secondary-text-color-light-highcontrast: #4d4d4d;
-            --accent-light-highcontrast: #692d39;
+            --accent-light-highcontrast: #ad1332;
             --tonal-light-highcontrast: #4d4d4d;
             --modal-background-light-highcontrast: #dcdcdc;
             --modal-transparent-light-highcontrast: #f0f0f0;
@@ -233,6 +233,17 @@
             /* Universal backdrop-filter removal for high contrast */
             * {
                 backdrop-filter: none !important;
+            }
+
+            .tab-btn.active {
+                color: var(--background-color) !important;
+                background: var(--accent !important);
+                border-radius: 12px;
+                corner-shape: superellipse(1.5);
+            }
+
+            .toolbar .tab-btn.active .material-symbols-rounded {
+                color: var(--background-color) !important;
             }
         }
 
@@ -6445,31 +6456,31 @@ async function playSong(song, playContext = null) {
     setPlayerLoadingState(true, song); 
 
     try {
-        audioPlayer.pause();
+        // iOS Background Fix: Do not pause or clear src before the async fetch.
+        // Fetching the URL first keeps the background session active during the wait.
         lastActiveTimestamp = -1;
         song.hasBeenLogged = false;
         currentlyPlayingSong = song;
+        setupBpm(song);
         
-        const isHlsStream = song.streamUrl && song.streamUrl.includes('.m3u8');
+        const fileUrl = song.blobUrl || song.streamUrl || await getSongFileUrl(song);
+        
+        if (!fileUrl) {
+            throw new Error(`Could not get a playable URL for ${song.name}`);
+        }
+
+        // --- Audio Element Updates (Sync block) ---
+        
+        if (audioPlayer.src && audioPlayer.src.startsWith('blob:')) {
+            URL.revokeObjectURL(audioPlayer.src);
+        }
 
         if (hls) {
             hls.destroy();
             hls = null;
         }
-        
-        setupBpm(song);
-        
-        if (audioPlayer.src && audioPlayer.src.startsWith('blob:')) {
-            URL.revokeObjectURL(audioPlayer.src);
-        }
-        audioPlayer.src = ''; 
-        audioPlayer.load();
-        
-        const fileUrl = song.blobUrl || song.streamUrl || await getSongFileUrl(song);
-        if (!fileUrl) {
-            throw new Error(`Could not get a playable URL for ${song.name}`);
-        }
 
+        const isHlsStream = song.streamUrl && song.streamUrl.includes('.m3u8');
         const isCrossOriginStream = song.storage === 'tidal' && !song.blobUrl;
         if (isCrossOriginStream) {
             audioPlayer.crossOrigin = "anonymous";
