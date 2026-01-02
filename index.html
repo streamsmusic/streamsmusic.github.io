@@ -2260,7 +2260,7 @@
 
         .highlight-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
             gap: 12px;
             margin-bottom: 40px;
         }
@@ -2291,6 +2291,11 @@
             box-shadow: 0 0 0 1px var(--glass-border);
             flex-shrink: 0;
             transition: all 0.3s cubic-bezier(.3,1.2,.64,1);
+        }
+        @media (max-width: 400px) {
+            .highlight-card img {
+                display: none;
+            }
         }
         .highlight-card-info {
             flex-grow: 1;
