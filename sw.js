@@ -1,4 +1,4 @@
-const CACHE_NAME = 'streams-cache-v13.2';
+const CACHE_NAME = 'streams-cache-v13.3';
 
 const ASSETS_TO_CACHE = [
   '/index.html',
