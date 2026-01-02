@@ -4196,6 +4196,8 @@ function resetPlayer() {
                         const songData = songReq.result;
                         if (songData) {
                             songData.storage = 'indexeddb';
+                            // Store the actual tidal ID in the local metadata for reference
+                            songData.cloudId = tidalSong.id;
                             songStore.put(songData);
                         }
                     };
@@ -4249,12 +4251,21 @@ function resetPlayer() {
                         isrc: match.isrc
                     };
                     
-                    // Try to stream directly first for immediate playback
                     const streamInfo = await resolveTidalUrl(tidalSong);
                     if (streamInfo && streamInfo.url) {
-                        // If casting, we just need the URL. If not, repair local.
-                        if (!castSession && !isDataSaver()) repairLocalFile(tidalSong, song.id);
-                        return streamInfo.url;
+                        // iOS and Cast can handle direct streams without CORS silencing
+                        if (isIOS || castSession) {
+                            if (!castSession && !isDataSaver()) repairLocalFile(tidalSong, song.id);
+                            return streamInfo.url;
+                        }
+                    }
+                    
+                    // Desktop/Android MUST use Blobs to avoid "outputs zeroes" CORS error
+                    const cached = await processAndCacheAudio(tidalSong);
+                    if (cached && cached.blob) {
+                        // Save to DB and return local Blob URL
+                        await saveBlobToLocalFile(song.id, cached.blob);
+                        return URL.createObjectURL(cached.blob);
                     }
                     
                     // Fallback to full process (download to blob)
@@ -7127,14 +7138,16 @@ async function playSong(song, playContext = null) {
         const isBlob = fileUrl.startsWith('blob:');
         
         if (isBlob) {
-            // Blobs are same-origin; we can connect the visualizer safely
             audioPlayer.removeAttribute('crossorigin');
             connectAudioGraph();
-        } else if (song.storage === 'tidal') {
-            // Direct CDN URL: Enforcing anonymous CORS is required for Web Audio processing
-            // but if the server doesn't support it, we must disconnect the graph to hear audio
-            audioPlayer.crossOrigin = "anonymous";
-            connectAudioGraph();
+        } else if (song.storage === 'tidal' || song.storage === 'filesystem') {
+            // If we are streaming a direct URL and NOT on iOS, we disconnect the 
+            // audio graph to prevent "silence" due to CORS restrictions.
+            if (!isIOS && !castSession) {
+                console.warn("Direct stream detected: Disconnecting visualizer to bypass CORS silencing.");
+                disconnectAudioGraph();
+            }
+            audioPlayer.removeAttribute('crossorigin');
         } else {
             audioPlayer.removeAttribute('crossorigin');
             connectAudioGraph();
