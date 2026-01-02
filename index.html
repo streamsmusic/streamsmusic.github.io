@@ -4183,16 +4183,33 @@ function resetPlayer() {
 
         async function repairLocalFile(tidalSong, localId) {
             try {
-                // Fetch the blob using the robust processor
                 const cached = await processAndCacheAudio(tidalSong);
                 if (cached && cached.blob) {
-                    const tx = db.transaction(['musicFiles', 'tidalCache'], 'readwrite');
-                    // Save to the local file store ( musicFiles )
+                    const tx = db.transaction(['musicFiles', 'tidalCache', 'songs'], 'readwrite');
                     tx.objectStore('musicFiles').put({ id: localId, file: cached.blob });
-                    // Clean up the temporary tidal cache
                     tx.objectStore('tidalCache').delete(tidalSong.id);
+                    
+                    // Update metadata: change storage from 'filesystem' to 'indexeddb'
+                    const songStore = tx.objectStore('songs');
+                    const songReq = songStore.get(localId);
+                    songReq.onsuccess = () => {
+                        const songData = songReq.result;
+                        if (songData) {
+                            songData.storage = 'indexeddb';
+                            songStore.put(songData);
+                        }
+                    };
+                    
                     await tx.done;
-                    console.log(`Successfully repaired local file ID: ${localId}`);
+
+                    // Update in-memory song object
+                    const memorySong = songs.find(s => s.id === localId);
+                    if (memorySong) memorySong.storage = 'indexeddb';
+                    if (currentlyPlayingSong && currentlyPlayingSong.id === localId) {
+                        currentlyPlayingSong.storage = 'indexeddb';
+                    }
+
+                    console.log(`Successfully repaired and migrated local file ID: ${localId}`);
                 }
             } catch (e) {
                 console.error("Self-healing repair failed:", e);
@@ -7142,6 +7159,7 @@ async function playSong(song, playContext = null) {
                 }
             } else {
                 audioPlayer.src = fileUrl;
+                audioPlayer.load();
             }
         }
 
@@ -7254,9 +7272,21 @@ function updateMiniplayerUI(song, state) {
 async function getSongFileUrl(song) {
     if (!song) return null;
 
-    if (song.storage === 'indexeddb') {
+    // Check internal DB first if storage is indexeddb OR as a fallback for filesystem
+    if (song.storage === 'indexeddb' || song.storage === 'filesystem') {
         try {
             const tx = db.transaction(['musicFiles'], 'readonly');
+            const request = tx.objectStore('musicFiles').get(song.id);
+            const result = await new Promise((resolve) => {
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => resolve(null);
+            });
+            if (result) return URL.createObjectURL(result.file);
+        } catch (e) {}
+    }
+
+    if (song.storage === 'filesystem') {
+        for (const handle of directoryHandles) {
             const request = tx.objectStore('musicFiles').get(song.id);
             const result = await new Promise((resolve, reject) => {
                 request.onsuccess = () => resolve(request.result);
