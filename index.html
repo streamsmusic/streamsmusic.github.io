@@ -4496,7 +4496,9 @@ function generateRandomGradient() {
 }
 
 function getPlaylistArtPlaceholder(imageUrls, className = "item-card-art") {
-    const validUrls = (imageUrls || []).filter(u => u && u.length > 0 && !u.includes('undefined')).slice(0, 4);
+    const validUrls = (imageUrls || []).filter(u => {
+        return u && typeof u === 'string' && u.length > 20 && !u.includes('undefined') && !u.endsWith('null/640x640.jpg');
+    }).slice(0, 4);
     
     if (validUrls.length >= 4) {
         return `
@@ -7895,14 +7897,18 @@ async function openPlaylistView(playlistId, playlistTitle) {
         
         currentDrawerContext = tracks;
         const playlistImage = playlistData.image || playlistData.squareImage || playlistData.cover;
-        const playlistArt = getHighResArtwork(playlistImage);
+        const trackArts = tracks.slice(0, 4).map(t => getHighResArtwork(t.album?.cover));
+        
         const trackCount = playlistData.numberOfTracks || tracks.length;
         const description = playlistData.description || '';
         
         const contentHtml = `
             <div class="album-header-list" style="margin-bottom: 15px; display: flex; align-items: center; justify-content: center; flex-direction: column;">
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <img src="${playlistArt}" style="width: 250px; height: 250px; border-radius: 12px; corner-shape: superellipse(1.5); box-shadow: 0 0 0 1px var(--glass-border);">
+                <div style="display: flex; align-items: center; gap: 15px; width: 250px; height: 250px;">
+                    ${playlistImage ? 
+                        `<img src="${getHighResArtwork(playlistImage)}" style="width: 100%; height: 100%; border-radius: 12px; corner-shape: superellipse(1.5); box-shadow: 0 0 0 1px var(--glass-border); object-fit: cover;">` : 
+                        getPlaylistArtPlaceholder(trackArts, "item-card-art")
+                    }
                 </div>
                 ${description ? `<p style="text-align: center; color: var(--secondary-text-color); font-size: 0.9em; margin: 10px 20px;">${sanitize(description)}</p>` : ''}
                 <p style="text-align: center; color: var(--secondary-text-color); font-size: 0.85em; margin-top: 5px;">${trackCount} tracks</p>
