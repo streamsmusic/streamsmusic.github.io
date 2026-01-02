@@ -5804,7 +5804,7 @@ function renderLibraryPage() {
                     <img src="${art}" alt="${p.name}" class="item-card-art">
                     <div class="item-card-info">
                         <div class="item-card-title">${sanitize(p.name)}</div>
-                        <div class="item-card-subtitle">${playlistSongs.length} songs</div>
+                        <div class="item-card-subtitle">${playlistSongs.length} 곡</div>
                     </div>
                 </div>`;
             }).join('');
@@ -5858,7 +5858,7 @@ function renderPlaylists() {
                 <img src="${albumArt}" class="album-thumbnail" style="width: 40px; height: 40px; border-radius: 8px; margin-right: 5px;">
                 <div>
                     <div class="song-title" style="font-size: 1em; margin-bottom: 2px; white-space: normal;">${playlist.name}</div>
-                    <div class="album-artist" style="font-size: 0.8em;">${playlistSongs.length} songs</div>
+                    <div class="album-artist" style="font-size: 0.8em;">${playlistSongs.length} 곡</div>
                 </div>
             </div>
             <button class="remove-from-queue-btn" onclick="deletePlaylist(${playlist.id}, event)" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%);">
@@ -9832,7 +9832,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>`).join('')}</div>`;
                 
-                openDrawer(playlist.name, `${playlistSongs.length} songs`, contentHtml, { type: 'playlist', id: playlistId });
+                openDrawer(playlist.name, `${playlistSongs.length} 곡`, contentHtml, { type: 'playlist', id: playlistId });
             }
         });
 
