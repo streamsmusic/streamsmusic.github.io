@@ -5715,8 +5715,8 @@ async function renderHomePage() {
         <div class="highlight-card" data-id="${song.id}" id="highlight-${i+1}">
             <img src="${song.albumArt}">
             <div class="highlight-card-info">
-                <div class="highlight-card-label">${isListenAgain ? 'Listen Again' : 'Quick Picks'}</div>
-                <div class="highlight-card-title">${sanitize(song.name)}</div>
+                <div class="highlight-card-label">${isListenAgain ? 'Listen Again' : 'Recommended'}</div>
+                <div class="highlight-card-title">${sanitize(song.name)}${getExplicitBadge(song.explicit)}</div>
             </div>
         </div>`;
     }).join('');
@@ -7827,7 +7827,7 @@ async function openArtistView(artistId, artistName) {
                         <div class="song-info">
                             <img src="${getHighResArtwork(track.album.cover, 80)}" class="album-thumbnail" style="width: 40px; height: 40px; border-radius: 6px; margin-right: 10px;">
                             <div>
-                                <div class="song-title">${sanitize(track.title)}</div>
+                                <div class="song-title">${sanitize(track.title)}${getExplicitBadge(track.explicit)}</div>
                                 <div class="album-artist" style="font-size: 0.8em;">${sanitize(track.album.title)}</div>
                             </div>
                         </div>
@@ -8004,7 +8004,7 @@ function openLocalAlbumView(artistName, albumName) {
             <div class="music-item" data-id="${song.id}" style="cursor: pointer;">
                 <div class="song-info">
                     <span class="track-number">${song.trackNumber || '•'}.</span>
-                    <div class="song-title">${sanitize(song.name)}</div>
+                    <div class="song-title">${sanitize(song.name)}${getExplicitBadge(song.explicit)}</div>
                 </div>
             </div>`).join('')}
         </div>`;
