@@ -694,7 +694,7 @@
             }
 
             #library-view {
-                padding-top: 130px !important;
+                padding-top: calc(130px + env(safe-area-inset-top)) !important;
             }
         }
 
@@ -704,7 +704,7 @@
             }
 
             #tidal-view {
-                padding-top: 130px !important;
+                padding-top: calc(130px + env(safe-area-inset-top)) !important;
             }
         }
 
@@ -1699,7 +1699,7 @@
                 padding: 0;
             }
             
-            @media (max-height: 780px) {
+            @media (max-height: 760px) {
                 .now-playing-wrapper {
                     gap: 2vh !important;
                 }
