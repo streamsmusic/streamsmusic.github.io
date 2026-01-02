@@ -2990,8 +2990,8 @@
         let touchTarget = null;
         let hls = null; // To hold the Hls.js instance
         let castSession = null;
-        let castPlayer = null;
-        let castController = null;
+        let castPlayer = new cast.framework.RemotePlayer();
+        let castController = new cast.framework.RemotePlayerController(castPlayer);
         let audioContext;
         let analyser;
         let isVisualizerInitialized = false;
@@ -9192,11 +9192,21 @@ window.__onGCastApiAvailable = function(isAvailable) {
             autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
         });
         const context = cast.framework.CastContext.getInstance();
-        context.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, (e) => {
-            castSession = context.getCurrentSession();
-            if (e.sessionState === 'SESSION_STARTED') {
-                audioPlayer.pause();
-                if (currentlyPlayingSong) loadRemoteMedia();
+        
+        // Listener to sync local UI with Remote Player state
+        castController.addEventListener(cast.framework.CastContextEventType.ANY_CHANGE, () => {
+            if (!castSession) return;
+            // Sync Play/Pause icon
+            playPauseIcon.textContent = castPlayer.isPaused ? 'play_arrow' : 'pause';
+            playPauseBtn.classList.toggle('playing', !castPlayer.isPaused);
+            updateMiniplayerUI(currentlyPlayingSong, castPlayer.isPaused ? 'paused' : 'playing');
+            
+            // Sync Progress
+            const duration = castPlayer.duration || currentlyPlayingSong?.duration || 0;
+            if (duration > 0) {
+                const percent = (castPlayer.currentTime / duration) * 100;
+                progress.style.width = `${percent}%`;
+                updateTimeDisplays(castPlayer.currentTime, duration);
             }
         });
     }
@@ -9561,6 +9571,10 @@ playPauseBtn.addEventListener('click', async () => {
 
     if (!isVisualizerInitialized) initVisualizer();
 
+    if (castSession) {
+        castController.playPause();
+        return;
+    }
     if (audioPlayer.paused) {
         if ('mediaSession' in navigator && navigator.mediaSession.metadata === null) {
             const song = currentlyPlayingSong;
@@ -9574,17 +9588,32 @@ playPauseBtn.addEventListener('click', async () => {
     }
 });
         
-nextBtn.addEventListener('click', async () => await playNextSong({ userInitiated: true }));
-prevBtn.addEventListener('click', () => playPreviousSong());
+nextBtn.addEventListener('click', async () => {
+    if (castSession) castController.stop(); 
+    await playNextSong({ userInitiated: true });
+});
+prevBtn.addEventListener('click', () => {
+    if (castSession) castController.stop();
+    playPreviousSong();
+});
 
 function seekAudio(e) {
-    if(isNaN(audioPlayer.duration)) return;
+    const duration = castSession ? castPlayer.duration : audioPlayer.duration;
+    if(!isFinite(duration) || duration <= 0) return;
+
     const rect = progressBar.getBoundingClientRect();
     const clickX = Math.max(0, Math.min(e.clientX, rect.right)) - rect.left;
     const percent = Math.max(0, Math.min(1, clickX / rect.width));
-    audioPlayer.currentTime = percent * audioPlayer.duration;
-}
+    const seekTime = percent * duration;
 
+    if (castSession) {
+        castPlayer.currentTime = seekTime;
+        castController.seek();
+    } else {
+        audioPlayer.currentTime = seekTime;
+    }
+}
+        
 function handleProgressDrag(e) { if (isDragging) seekAudio(e.touches ? e.touches[0] : e); }
 
 function closePanel() {
