@@ -685,6 +685,10 @@
             left: 50%;
             transform: translateX(-50%);
             z-index: 1002;
+            top: calc(70px + env(safe-area-inset-top));
+        }
+
+        #library-controls {
             top: calc(20px + env(safe-area-inset-top));
         }
 
@@ -2527,7 +2531,7 @@
     </div>
     <div id="radio-view" class="view-container" style="display: none;">
         <div class="page-content-wrapper">
-            <div class="search-container" style="position: absolute; top: calc(80px + env(safe-area-inset-top)); width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
+            <div class="search-container" style="position: absolute; top: calc(20px + env(safe-area-inset-top)); width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
                 <span class="material-symbols-rounded search-icon" style="padding-left: 2px;">play_circle</span>
                 <input type="text" id="radioSearchInput" placeholder="Start a station" class="library-search-input" style="box-shadow: var(--sun-shadow), 0 0 15px rgba(0, 0, 0, 0.05); padding: 12px 17px 12px 42px;">
             </div>
@@ -2540,7 +2544,7 @@
             </div>
         </div>
     </div>
-    <div id="tidal-view" class="view-container" style="display: none; calc(80px + env(safe-area-inset-top));">
+    <div id="tidal-view" class="view-container" style="display: none; calc(20px + env(safe-area-inset-top));">
         <div class="page-content-wrapper">
             <div class="library-controls" id="tidal-controls">
                 <div class="filter-container" id="tidal-filter-container">
@@ -2559,7 +2563,7 @@
                 </div>
             </div>
             
-            <div class="search-container" id="tidal-search-container" style="position: absolute; top: calc(80px + env(safe-area-inset-top)); width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
+            <div class="search-container" id="tidal-search-container" style="position: absolute; top: calc(20px + env(safe-area-inset-top)); width: 90%; z-index: 1; left: 50%; transform: translateX(-50%);">
                 <span class="material-symbols-rounded search-icon" style="padding-left: 2px;">search</span>
                 <input type="text" id="tidalSearchInput" placeholder="Search" class="library-search-input" style="box-shadow: var(--sun-shadow), 0 0 15px rgba(0, 0, 0, 0.05); padding: 12px 17px 12px 42px;">
             </div>
