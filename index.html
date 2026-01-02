@@ -7256,6 +7256,8 @@ function initModalVariables() {
     document.getElementById('closeManualLyricsModal').addEventListener('click', () => closeModal(manualLyricsSearchModal));
 }
 
+document.getElementById('gDriveSyncBtn').addEventListener('click', () => syncLibraryToDrive(true));
+        
 function openManageFoldersModal() {
     document.getElementById('tidalToggle').checked = istidalEnabled;
     document.getElementById('lrclibToggle').checked = isLrclibEnabled;
