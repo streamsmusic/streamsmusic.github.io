@@ -4178,70 +4178,71 @@ function resetPlayer() {
 
         async function repairLocalFile(tidalSong, localId) {
             try {
-                // Background download to restore the file
+                // Fetch the blob using the robust processor
                 const cached = await processAndCacheAudio(tidalSong);
                 if (cached && cached.blob) {
-                    await saveBlobToLocalFile(localId, cached.blob);
-                    
-                    // Clean up tidal cache to avoid duplication, as we now have it in musicFiles
-                    const tx = db.transaction('tidalCache', 'readwrite');
+                    const tx = db.transaction(['musicFiles', 'tidalCache'], 'readwrite');
+                    // Save to the local file store ( musicFiles )
+                    tx.objectStore('musicFiles').put({ id: localId, file: cached.blob });
+                    // Clean up the temporary tidal cache
                     tx.objectStore('tidalCache').delete(tidalSong.id);
                     await tx.done;
-                    console.log(`Repaired local file for song ${localId}`);
-                    showToast("Song downloaded and restored");
+                    console.log(`Successfully repaired local file ID: ${localId}`);
                 }
             } catch (e) {
-                console.error("Background repair failed", e);
+                console.error("Self-healing repair failed:", e);
             }
         }
 
         async function recoverMissingLocalSong(song) {
             if (!istidalEnabled) return null;
             
-            const query = song.isrc || `${song.artist} - ${song.name}`;
-            console.log(`Attempting to recover missing song: ${query}`);
-            
-            try {
-                // Search Tidal for a match
-                const searchRes = await fetchHifi(`/search/?s=${encodeURIComponent(query)}&limit=5`);
-                const searchJson = await searchRes.json();
-                const items = (searchJson.data || searchJson).items || [];
-                
-                // Fuzzy match strategy
-                const match = items.find(t => 
-                    t.title.toLowerCase() === song.name.toLowerCase() && 
-                    (t.artist.name.toLowerCase().includes(song.artist.toLowerCase()) || song.artist.toLowerCase().includes(t.artist.name.toLowerCase()))
-                ) || items[0];
-                
-                if (!match) return null;
-                
-                const tidalSong = {
-                    id: match.id,
-                    name: match.title,
-                    artist: match.artist.name,
-                    album: match.album.title,
-                    storage: 'tidal'
-                };
-                
-                // 1. Try to stream immediately
-                const streamInfo = await resolveTidalUrl(tidalSong);
-                if (streamInfo) {
-                    // Trigger self-healing download in background if NOT in data saver mode
-                    if (!isDataSaver()) {
-                        repairLocalFile(tidalSong, song.id);
+            const strategies = [
+                song.isrc,
+                `${song.artist} ${song.name}`.replace(/[^\w\s]/gi, '')
+            ].filter(Boolean);
+
+            for (const query of strategies) {
+                console.log(`Recovery attempt [${query}] for ${song.name}`);
+                try {
+                    const searchRes = await fetchHifi(`/search/?s=${encodeURIComponent(query)}&limit=10`);
+                    const searchJson = await searchRes.json();
+                    const items = (searchJson.data || searchJson).items || [];
+                    
+                    if (items.length === 0) continue;
+
+                    // Improved matching: Priority to ISRC, then exact title+artist
+                    const match = items.find(t => t.isrc === song.isrc) || 
+                                  items.find(t => t.title?.toLowerCase() === song.name.toLowerCase()) ||
+                                  items[0];
+                    
+                    if (!match) continue;
+                    
+                    const tidalSong = {
+                        id: match.id,
+                        name: match.title || match.name,
+                        artist: match.artist?.name || match.artist || "Unknown",
+                        album: match.album?.title || match.album || "Unknown",
+                        storage: 'tidal',
+                        isrc: match.isrc
+                    };
+                    
+                    // Try to stream directly first for immediate playback
+                    const streamInfo = await resolveTidalUrl(tidalSong);
+                    if (streamInfo && streamInfo.url) {
+                        if (!isDataSaver()) repairLocalFile(tidalSong, song.id);
+                        return streamInfo.url;
                     }
-                    return streamInfo.url;
+                    
+                    // Fallback to full process (download to blob)
+                    const cached = await processAndCacheAudio(tidalSong);
+                    if (cached && cached.blob) {
+                        await saveBlobToLocalFile(song.id, cached.blob);
+                        return URL.createObjectURL(cached.blob);
+                    }
+                } catch (e) {
+                    console.warn(`Strategy ${query} failed:`, e);
                 }
-                
-                // 2. Fallback to download-and-play
-                const cached = await processAndCacheAudio(tidalSong);
-                if (cached && cached.blob) {
-                    saveBlobToLocalFile(song.id, cached.blob);
-                    return URL.createObjectURL(cached.blob);
-                }
-                
-            } catch (e) {
-                console.warn("Recovery failed:", e);
             }
             return null;
         }
@@ -7078,7 +7079,7 @@ async function playSong(song, playContext = null) {
             if (song.storage !== 'tidal') {
                  fileUrl = await recoverMissingLocalSong(song);
                  if (fileUrl) {
-                     showToast("Streaming from cloud...");
+                     showToast(`Recovered "${song.name}" from cloud`);
                  }
             }
         }
