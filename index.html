@@ -2393,6 +2393,29 @@
         .radio-locked .queue-item {
             cursor: default !important;
         }
+
+        /* Playlist Edit Mode Styles */
+        .playlist-drag-handle {
+            display: none;
+            color: var(--secondary-text-color);
+            cursor: grab;
+            margin-right: 10px;
+            touch-action: none;
+        }
+        
+        .edit-mode .playlist-drag-handle {
+            display: flex;
+            align-items: center;
+        }
+
+        .edit-mode .song-item-actions {
+            color: var(--accent); /* Red delete icon in edit mode */
+            opacity: 1;
+        }
+
+        .edit-mode .music-item {
+            padding-left: 5px; /* Make room for handle */
+        }
         
         /* Browse Pills */
         .genre-pill {
@@ -2431,7 +2454,8 @@
             font-size: 14px;
             opacity: 0;
             transition: opacity 0.3s, transform 0.3s;
-            text-align: center;
+            text-align: left;
+            width: fit-content;
         }
 
         .toast-message.show {
@@ -2725,14 +2749,11 @@
     <div id="manageFoldersModal" class="modal-overlay">
         <div style="background: var(--modal-background); padding: 25px; border-radius: 50px; corner-shape: superellipse(1.5); width: 90%; max-width: 450px; backdrop-filter: blur(10px); border: 1px solid var(--glass-border);">
             <h2 style="margin-bottom: 15px;">Settings</h2>
-            If you enable a third-party service, you agree to the Terms of Service and other polices of that service.
-            <div style="display: flex; flex-direction: column; gap: 15px; padding-top: 15px;">
+            <div style="display: flex; flex-direction: column; gap: 15px;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <label for="tidalToggle">Enable Streaming</label>
                     <input type="checkbox" id="tidalToggle">
                 </div>
-
-                <!-- Feature 1: Audio Quality Preference -->
                 <div style="display: flex; flex-direction: column; gap: 5px;">
                     <label for="prefAudioQuality" style="font-size: 14px; color: var(--secondary-text-color);">Streaming Quality</label>
                     <select id="prefAudioQuality" class="library-search-input" style="padding: 8px 15px;">
@@ -2741,32 +2762,38 @@
                         <option value="LOW">96kbps</option>
                     </select>
                 </div>
-
-                <!-- Feature 2: Disable Dynamic Cache -->
                 <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <label for="smartCacheToggle">Smart Pre-Caching</label>
+                    <label for="smartCacheToggle">Intelligent Cache</label>
                     <input type="checkbox" id="smartCacheToggle" checked>
                 </div>
-                <small style="margin-top: -10px; font-size: 12px; color: var(--secondary-text-color);">Pre-load next songs based on listening habits.</small>
-
-                <!-- Feature 3: Stream Only Mode (No IDB) -->
                 <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <label for="streamOnlyToggle">Stream Only Mode</label>
+                    <label for="streamOnlyToggle">Don't save songs to temporary storage</label>
                     <input type="checkbox" id="streamOnlyToggle">
                 </div>
-                <small style="margin-top: -10px; font-size: 12px; color: var(--secondary-text-color);">Disable disk storage. Songs won't be saved offline.</small>
-                
-                <div class="menu-separator"></div>
-
                 <div style="display: flex; align-items: center; justify-content: space-between;">
                     <label for="lrclibToggle">Search LRCLIB for lyrics</label>
                     <input type="checkbox" id="lrclibToggle">
                 </div>
             </div>
 
+            <div class="menu-separator" style="margin: 15px 0;"></div>
+                
+            <h3 style="font-size: 1rem; margin-bottom: 10px;">Library Data</h3>
+            <div style="display: flex; gap: 10px;">
+                <button id="exportLibraryBtn" class="filter-btn" style="flex: 1;">
+                    <span class="material-symbols-rounded" style="font-size: 18px; vertical-align: middle; margin-right: 5px;">upload</span> Export
+                </button>
+                <button id="importLibraryBtn" class="filter-btn" style="flex: 1;">
+                    <span class="material-symbols-rounded" style="font-size: 18px; vertical-align: middle; margin-right: 5px;">download</span> Import
+                </button>
+                <input type="file" id="importLibraryInput" accept=".json" style="display: none;">
+            </div>
+            <p style="font-size: 12px; color: var(--secondary-text-color); margin-top: 5px;">
+                Exports playlists, history, and song metadata.
+            </p>
+
             <div style="display: flex; justify-content: flex-end; margin-top: 25px; gap: 10px;">
-                <button id="saveIntegrations" class="filter-btn">Save</button>
-                <button id="closeFoldersModal" class="filter-btn active">Close</button>
+                <button id="saveIntegrations" class="filter-btn active">Close</button>
             </div>
         </div>
     </div>
@@ -2996,6 +3023,7 @@
         let currentSortMode = 'dateAdded'; // 'dateAdded', 'alpha'
         let activeAlbum = null; // Will store { artist, name } of the selected album
         let isFetchingQueue = false; // Lock to prevent overlapping fetches
+        let isPlaylistEditMode = false; // Track edit state for playlist drawer
 
         function handleSystemPreferences() {
             // 1. Theme (Light/Dark)
@@ -3218,13 +3246,18 @@ function openDrawer(title, subtitle, contentHtml, context = {}) {
 
     drawerTitleEl.textContent = sanitize(title);
     
-    // Check the context to see if we should add a delete button
+    // Check the context to see if we should add edit buttons
     if (context.type === 'playlist' && context.id) {
-        // If it's a playlist, add the subtitle and the delete button side-by-side
         drawerSubtitleEl.innerHTML = `
             <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
                 <span>${sanitize(subtitle)}</span>
-                <button id="drawer-delete-playlist-btn" data-playlist-id="${context.id}" title="Delete Playlist">
+                <button id="drawer-edit-playlist-btn" data-playlist-id="${context.id}" title="Edit Order" style="background:var(--search-background);border:1px solid var(--glass-border);border-radius:20px;padding:5px 12px;cursor:pointer;color:var(--text-color);display:flex;align-items:center;gap:5px;">
+                    Edit
+                </button>
+                <button id="drawer-rename-playlist-btn" data-playlist-id="${context.id}" title="Rename" style="background:none;border:none;cursor:pointer;color:var(--text-color); display:flex;">
+                    <span class="material-symbols-rounded">drive_file_rename_outline</span>
+                </button>
+                <button id="drawer-delete-playlist-btn" data-playlist-id="${context.id}" title="Delete" style="background:none;border:none;cursor:pointer;color:var(--text-color); display:flex;">
                     <span class="material-symbols-rounded">delete_forever</span>
                 </button>
             </div>
@@ -3244,6 +3277,9 @@ function closeDrawer() {
     drawer.classList.remove('open');
     drawerOverlay.classList.remove('visible');
     isDrawerOpen = false;
+    // Reset edit mode when closing drawer
+    isPlaylistEditMode = false; 
+    
     // Clear content after animation
     closeDrawerTimeout = setTimeout(() => {
         drawer.style.transform = '';
@@ -5536,14 +5572,185 @@ async function removeSongFromPlaylist(songId, playlistId, event) {
     const song = songs.find(s => s.id === songId);
     if (!playlist || !song) return;
 
+    // Prompt if NOT in edit mode
+    if (!isPlaylistEditMode) {
+        const confirm = await showConfirmDialog(`Remove "${song.name}" from this playlist?`);
+        if (!confirm) return;
+    }
+
+    // Find index to remove only one instance if duplicates exist, or all? 
+    // Usually playlists allow duplicates, but simple filter removes all instances of ID.
+    // For now, removing by ID is standard.
     playlist.songIds = playlist.songIds.filter(id => id !== songId);
 
     const tx = db.transaction('playlists', 'readwrite');
     tx.objectStore('playlists').put(playlist);
     await tx.done;
     
-    showPopupMessage(`Removed "${song.name}" from "${playlist.name}"`);
-    renderPlaylistSongs(playlistId);
+    if (isPlaylistEditMode) {
+        // In edit mode, remove element directly to keep position context for others
+        const item = event.target.closest('.music-item');
+        if(item) item.remove();
+        // Update DB is already done, but if we dragged things around, the DOM order matters.
+        // If we just clicked remove, filtering songIds is fine.
+    } else {
+        // In view mode, refresh to keep consistent
+        // If we are in the drawer (normal library usage), we might need to refresh drawer content manually
+        // But since this function is usually called from the drawer context:
+        const drawerContent = document.getElementById('drawer-content');
+        if (drawerContent && document.getElementById('drawer').classList.contains('open')) {
+             // Re-render only if we aren't in edit mode (to avoid resetting scroll/focus)
+             // However, openDrawer call is complex to reconstruct here.
+             // Simplest approach: remove the row from DOM.
+             const item = event.target.closest('.music-item');
+             if(item) item.remove();
+             
+             // If we were viewing the dedicated Playlist View (not drawer), handle that?
+             // Currently playlists are only fully viewable in Drawer.
+        }
+    }
+    
+    showToast(`Removed "${song.name}"`);
+}
+
+function togglePlaylistEditMode(playlistId) {
+    isPlaylistEditMode = !isPlaylistEditMode;
+    
+    const container = document.getElementById('playlist-items-container');
+    const editBtn = document.getElementById('drawer-edit-playlist-btn');
+    
+    if (isPlaylistEditMode) {
+        container.classList.add('edit-mode');
+        if(editBtn) {
+            editBtn.style.backgroundColor = 'var(--accent)';
+            editBtn.style.color = 'var(--background-color)';
+            editBtn.innerHTML = '<span class="material-symbols-rounded" style="font-size:16px;">check</span> Done';
+        }
+        makePlaylistItemsDraggable(container, playlistId);
+    } else {
+        container.classList.remove('edit-mode');
+        if(editBtn) {
+            editBtn.style.backgroundColor = 'var(--search-background)';
+            editBtn.style.color = 'var(--text-color)';
+            editBtn.innerHTML = 'Edit';
+        }
+        // Cleanup drag listeners is handled by logic inside draggable function or simply ignored when not dragging
+    }
+}
+
+function makePlaylistItemsDraggable(container, playlistId) {
+    let draggedItem = null;
+    let touchTimeout;
+    let isTouchDragging = false;
+    let touchGhost = null;
+    let touchStartY = 0;
+
+    const items = container.querySelectorAll('.playlist-item');
+
+    items.forEach(item => {
+        // Desktop
+        item.setAttribute('draggable', 'true');
+        
+        item.addEventListener('dragstart', (e) => {
+            if (!isPlaylistEditMode) { e.preventDefault(); return; }
+            draggedItem = item;
+            setTimeout(() => item.classList.add('dragging'), 0);
+        });
+
+        item.addEventListener('dragend', () => {
+            if (draggedItem) {
+                draggedItem.classList.remove('dragging');
+                draggedItem = null;
+                updatePlaylistOrder(container, playlistId);
+            }
+        });
+
+        // Mobile Touch (Handle Only)
+        const handle = item.querySelector('.playlist-drag-handle');
+        if (handle) {
+            handle.addEventListener('touchstart', (e) => {
+                if (!isPlaylistEditMode) return;
+                e.preventDefault(); // Prevent scroll
+                touchStartY = e.touches[0].clientY;
+                isTouchDragging = true;
+                item.classList.add('dragging');
+                
+                if (navigator.vibrate) navigator.vibrate(50);
+
+                touchGhost = item.cloneNode(true);
+                touchGhost.style.position = 'fixed';
+                touchGhost.style.zIndex = '9999';
+                touchGhost.style.pointerEvents = 'none';
+                touchGhost.style.opacity = '0.9';
+                touchGhost.style.width = `${item.offsetWidth}px`;
+                touchGhost.style.background = 'var(--modal-background)';
+                touchGhost.classList.add('edit-mode'); // Keep styling
+                
+                const rect = item.getBoundingClientRect();
+                touchGhost.style.top = `${rect.top}px`;
+                touchGhost.style.left = `${rect.left}px`;
+                document.body.appendChild(touchGhost);
+            }, { passive: false });
+
+            handle.addEventListener('touchmove', (e) => {
+                if (!isTouchDragging) return;
+                e.preventDefault();
+                const touch = e.touches[0];
+
+                if (touchGhost) {
+                    touchGhost.style.top = `${touch.clientY - (touchGhost.offsetHeight / 2)}px`;
+                    touchGhost.style.left = `${touch.clientX - (touchGhost.offsetWidth / 2)}px`;
+                }
+
+                const afterElement = getDragAfterElement(container, touch.clientY);
+                if (afterElement == null) {
+                    container.appendChild(item);
+                } else {
+                    container.insertBefore(item, afterElement);
+                }
+            }, { passive: false });
+
+            const endDrag = () => {
+                if (isTouchDragging) {
+                    isTouchDragging = false;
+                    item.classList.remove('dragging');
+                    if (touchGhost) { touchGhost.remove(); touchGhost = null; }
+                    updatePlaylistOrder(container, playlistId);
+                }
+            };
+            handle.addEventListener('touchend', endDrag);
+            handle.addEventListener('touchcancel', endDrag);
+        }
+    });
+
+    container.addEventListener('dragover', e => {
+        if (!isPlaylistEditMode) return;
+        e.preventDefault();
+        const afterElement = getDragAfterElement(container, e.clientY);
+        if (afterElement == null) {
+            container.appendChild(draggedItem);
+        } else {
+            container.insertBefore(draggedItem, afterElement);
+        }
+    });
+}
+
+async function updatePlaylistOrder(container, playlistId) {
+    const playlist = playlists.find(p => p.id === playlistId);
+    if (!playlist) return;
+
+    const newSongIds = [];
+    container.querySelectorAll('.playlist-item').forEach(item => {
+        const id = parseFloat(item.dataset.id);
+        if (!isNaN(id)) newSongIds.push(id);
+    });
+
+    playlist.songIds = newSongIds;
+    
+    // Save to DB
+    const tx = db.transaction('playlists', 'readwrite');
+    tx.objectStore('playlists').put(playlist);
+    await tx.done;
 }
         
 function renderSongs(albums, isArtistView = false) {
@@ -6052,14 +6259,28 @@ function renderQueue() {
             </div>
         `).join('');
         
-        lyricsQueuePanel.innerHTML = `<div class="now-queue">${headerHtml}<div class="queue-list-container" style="margin-top: 10px;">${queueHtml}</div></div>`;
+        // Add Save Button at bottom
+        lyricsQueuePanel.innerHTML = `<div class="now-queue">
+            ${headerHtml}
+            <div class="queue-list-container" style="margin-top: 10px;">${queueHtml}</div>
+            ${playQueue.length > 0 ? `
+            <div style="padding: 15px 0; text-align: center;">
+                <button id="saveQueueBtn" class="action-btn" style="width: 100%; justify-content: center;">
+                    <span class="material-symbols-rounded" style="margin-right: 5px;">playlist_add</span>Save
+                </button>
+            </div>` : ''}
+        </div>`;
     }
     
 
-    // Attach event listener for the new toggle switch
+    // Attach event listener for the new toggle switch and save button
     const autoplayToggle = document.getElementById('autoplayToggle');
     if (autoplayToggle) {
         autoplayToggle.addEventListener('change', toggleAutoplay);
+    }
+    const saveQBtn = document.getElementById('saveQueueBtn');
+    if (saveQBtn) {
+        saveQBtn.onclick = saveQueueAsPlaylist;
     }
 
     // Disable drag if radio
@@ -6211,6 +6432,35 @@ function removeAutoplaySongs() {
     currentQueueIndex = playQueue.findIndex(s => s.id === currentSongId);
 
     renderQueue();
+}
+
+async function saveQueueAsPlaylist() {
+    if (playQueue.length === 0) return showToast("Queue is empty");
+    
+    // Simple prompt for now
+    const name = prompt("Enter new playlist name:");
+    if (name && name.trim()) {
+        const newPlaylist = { name: name.trim(), songIds: playQueue.map(s => s.id) };
+        
+        try {
+            const tx = db.transaction('playlists', 'readwrite');
+            const request = tx.objectStore('playlists').add(newPlaylist);
+            await new Promise((resolve, reject) => {
+                tx.oncomplete = () => {
+                    newPlaylist.id = request.result;
+                    resolve();
+                };
+                tx.onerror = () => reject(tx.error);
+            });
+            
+            playlists.push(newPlaylist);
+            showToast(`Saved playlist "${name}"`);
+            if (activeView === 'library') renderLibraryPage();
+        } catch (e) {
+            console.error(e);
+            showToast("Failed to save playlist");
+        }
+    }
 }
 
 function setPlayerLoadingState(isLoading, song = null) {
@@ -6731,8 +6981,6 @@ function initModalVariables() {
     document.getElementById('treble-slider').addEventListener('input', (e) => { if(eqTreble) eqTreble.gain.value = e.target.value; });
     
     manageFoldersModal = document.getElementById('manageFoldersModal');
-    document.getElementById('closeFoldersModal').addEventListener('click', () => closeModal(manageFoldersModal));
-
     manualLyricsSearchModal = document.getElementById('manualLyricsSearchModal');
     document.getElementById('manualLyricsSearchBtn').addEventListener('click', searchLrclibForManualPick);
     document.getElementById('closeManualLyricsModal').addEventListener('click', () => closeModal(manualLyricsSearchModal));
@@ -7010,20 +7258,6 @@ async function processAndCachetidalTrack(songObject) {
         return cacheEntry;
     }
     return null;
-}
-
-function highlightCurrentTrack() {
-    // Remove old highlights
-    document.querySelectorAll('.current-track').forEach(el => el.classList.remove('current-track'));
-    
-    if (!currentSongId) return;
-
-    // Highlight in lists
-    const items = document.querySelectorAll(`.music-item[data-id="${currentSongId}"], .music-item[data-track-id="${currentSongId}"], .music-item[data-cached-id="${currentSongId}"]`);
-    items.forEach(el => {
-        el.classList.add('current-track');
-        // Optional: Scroll to view if in a long list, but be careful not to annoy user
-    });
 }
 
 async function openArtistView(artistId, artistName) {
@@ -8579,6 +8813,12 @@ window.addEventListener("load", async () => {
             document.body.classList.add('is-mobile');
         }
         
+        // Request Persistent Storage
+        if (navigator.storage && navigator.storage.persist) {
+            const isPersisted = await navigator.storage.persist();
+            console.log(`Storage persistence granted: ${isPersisted}`);
+        }
+
         await initDB();
         initModalVariables();
 
@@ -8713,7 +8953,6 @@ async function openContextFromPlayer(type) {
             musicTitle.innerHTML = `<span class="clickable" onclick="openContextFromPlayer('album')">${sanitize(song.name)}</span>`;
             musicArtist.innerHTML = `<span class="clickable" onclick="openContextFromPlayer('artist')">${sanitize(song.artist)}</span>`;
             updateTimeDisplays(progress, audioPlayer.duration);
-            highlightCurrentTrack();
 
             const stableArtUrl = song.albumArt || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
             if (albumArtImg.src !== stableArtUrl) {
@@ -9049,17 +9288,26 @@ document.addEventListener('DOMContentLoaded', async () => {
                  const playlistId = parseInt(playlistCard.dataset.playlistId, 10);
                  const playlist = playlists.find(p => p.id === playlistId);
                  const playlistSongs = playlist.songIds.map(id => songs.find(s => s.id === id)).filter(Boolean);
-                 const contentHtml = `<div class="item-list">${playlistSongs.map(song => `
-                    <div class="music-item" data-id="${song.id}" style="cursor: pointer;">
+                 
+                // Render with Remove Buttons & Drag Handles
+                 const contentHtml = `<div class="item-list" id="playlist-items-container">${playlistSongs.map(song => `
+                    <div class="music-item playlist-item" data-id="${song.id}" style="cursor: pointer;">
                          <div class="song-info">
+                            <div class="playlist-drag-handle">
+                                <span class="material-symbols-rounded">drag_handle</span>
+                            </div>
                             <img src="${song.albumArt}" class="album-thumbnail" style="width: 40px; height: 40px; border-radius: 8px; margin-right: 6px;">
                             <div>
                                 <div class="song-title">${sanitize(song.name)}</div>
                                 <div class="album-artist" style="font-size: 0.8em;">${sanitize(song.artist)}</div>
                             </div>
+                            <button class="song-item-actions" onclick="event.stopPropagation(); removeSongFromPlaylist(${song.id}, ${playlistId}, event)">
+                                <span class="material-symbols-rounded" style="font-size: 20px;">do_not_disturb_on</span>
+                            </button>
                         </div>
                     </div>`).join('')}</div>`;
-                openDrawer(playlist.name, `${playlistSongs.length} songs`, contentHtml, { type: 'playlist', id: playlistId }); // Pass details
+                
+                openDrawer(playlist.name, `${playlistSongs.length} songs`, contentHtml, { type: 'playlist', id: playlistId });
             }
         });
 
@@ -9194,6 +9442,43 @@ document.addEventListener('DOMContentLoaded', async () => {
                 searchtidal();
             }
         });
+
+        document.body.addEventListener('click', async (e) => {
+            if (e.target.closest('#drawer-delete-playlist-btn')) {
+                const button = e.target.closest('#drawer-delete-playlist-btn');
+                const playlistId = parseInt(button.dataset.playlistId, 10);
+                if (playlistId) deletePlaylist(playlistId);
+            }
+            
+            if (e.target.closest('#drawer-rename-playlist-btn')) {
+                const button = e.target.closest('#drawer-rename-playlist-btn');
+                const playlistId = parseInt(button.dataset.playlistId, 10);
+                if (playlistId) renamePlaylist(playlistId);
+            }
+
+            if (e.target.closest('#drawer-edit-playlist-btn')) {
+                const button = e.target.closest('#drawer-edit-playlist-btn');
+                const playlistId = parseInt(button.dataset.playlistId, 10);
+                if (playlistId) togglePlaylistEditMode(playlistId);
+            }
+        });
+
+        async function renamePlaylist(playlistId) {
+            const playlist = playlists.find(p => p.id === playlistId);
+            if (!playlist) return;
+            
+            const newName = prompt("Rename playlist:", playlist.name);
+            if (newName && newName.trim() && newName !== playlist.name) {
+                playlist.name = newName.trim();
+                const tx = db.transaction('playlists', 'readwrite');
+                tx.objectStore('playlists').put(playlist);
+                await tx.done;
+                
+                document.getElementById('drawer-title').textContent = playlist.name;
+                showToast("Playlist renamed");
+                if (activeView === 'library') renderLibraryPage();
+            }
+        }
         
         setupLongPressListeners(document.getElementById('library-grid'));
         setupLongPressListeners(document.getElementById('search-results-grid'));
@@ -9352,6 +9637,158 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         document.getElementById('manageFoldersBtn').addEventListener('click', openManageFoldersModal);
         document.getElementById('saveIntegrations').addEventListener('click', saveIntegrationSettings);
+
+        // --- Library Export/Import Logic ---
+        document.getElementById('exportLibraryBtn').addEventListener('click', async () => {
+            try {
+                showToast("Preparing library export...");
+                
+                const tx = db.transaction(['songs', 'playlists', 'playHistory'], 'readonly');
+                const [songsData, playlistsData, historyData] = await Promise.all([
+                    promiseIDBRequest(tx.objectStore('songs').getAll()),
+                    promiseIDBRequest(tx.objectStore('playlists').getAll()),
+                    promiseIDBRequest(tx.objectStore('playHistory').getAll())
+                ]);
+
+                const exportObj = {
+                    version: 1,
+                    timestamp: Date.now(),
+                    source: 'Streams',
+                    songs: songsData,
+                    playlists: playlistsData,
+                    history: historyData
+                };
+
+                const blob = new Blob([JSON.stringify(exportObj)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `streams-library-${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showToast("Library exported successfully");
+            } catch (e) {
+                console.error("Export failed:", e);
+                showToast("Export failed");
+            }
+        });
+
+        document.getElementById('importLibraryBtn').addEventListener('click', () => {
+            document.getElementById('importLibraryInput').click();
+        });
+
+document.getElementById('importLibraryInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (!await showConfirmDialog("Importing will REPLACE your current library. All existing data will be lost. Continue?")) {
+                e.target.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                try {
+                    showToast("Importing data...");
+                    const data = JSON.parse(event.target.result);
+                    
+                    if (!data.songs || !Array.isArray(data.songs)) {
+                        throw new Error("Invalid library file format");
+                    }
+
+                    const tx = db.transaction(['songs', 'playlists', 'playHistory'], 'readwrite');
+                    
+                    // 1. Clear existing data
+                    await Promise.all([
+                        tx.objectStore('songs').clear(),
+                        tx.objectStore('playlists').clear(),
+                        tx.objectStore('playHistory').clear()
+                    ]);
+
+                    // 2. Import Songs
+                    const songStore = tx.objectStore('songs');
+                    for (const song of data.songs) {
+                        songStore.put(song);
+                    }
+
+                    // 3. Import Playlists
+                    if (data.playlists) {
+                        const plStore = tx.objectStore('playlists');
+                        for (const pl of data.playlists) {
+                            plStore.put(pl);
+                        }
+                    }
+
+                    // 4. Import History
+                    if (data.history) {
+                        const histStore = tx.objectStore('playHistory');
+                        for (const h of data.history) {
+                            histStore.put(h);
+                        }
+                    }
+
+                    await tx.done;
+                    
+                    // Refresh memory and UI
+                    await loadSongsAndPlaylists();
+                    if (activeView === 'library') renderLibraryPage();
+                    if (activeView === 'home') renderHomePage();
+                    
+                    // Update lookups
+                    updateLocalSongLookup(data.songs, { clear: true });
+                    isrcToLocalSongMap.clear();
+                    data.songs.forEach(song => {
+                        if(song.isrc) isrcToLocalSongMap.set(song.isrc, song);
+                    });
+
+                    showToast(`Library restored. Starting downloads...`);
+                    
+                    // 5. Trigger download for Tidal tracks
+                    restoreTidalDownloads(data.songs);
+                    
+                    closeModal(manageFoldersModal);
+
+                } catch (err) {
+                    console.error("Import error:", err);
+                    showToast("Failed to import library file");
+                }
+                e.target.value = '';
+            };
+            reader.readAsText(file);
+        });
+
+        async function restoreTidalDownloads(importedSongs) {
+            const tidalSongs = importedSongs.filter(s => s.storage === 'tidal');
+            if (tidalSongs.length === 0) return;
+
+            // Only run if streaming is enabled and stream-only is OFF
+            if (!istidalEnabled || (typeof enableStreamOnly !== 'undefined' && enableStreamOnly)) return;
+
+            showToast(`Downloading ${tidalSongs.length} items...`);
+            
+            let downloadedCount = 0;
+            // Process sequentially to be gentle on network/API
+            for (const song of tidalSongs) {
+                try {
+                    // Check if already cached
+                    const tx = db.transaction('tidalCache', 'readonly');
+                    const exists = await promiseIDBRequest(tx.objectStore('tidalCache').get(song.id));
+                    
+                    if (!exists) {
+                        const result = await processAndCacheAudio(song);
+                        if (result) downloadedCount++;
+                    }
+                } catch (e) {
+                    console.warn(`Restoration download skipped for ${song.name}`);
+                }
+            }
+            if (downloadedCount > 0) {
+                showToast(`Finished downloading ${downloadedCount} songs.`);
+            }
+        }
 
         const tidalSearchInput = document.getElementById('tidalSearchInput');
         tidalSearchInput.addEventListener('input', () => {
