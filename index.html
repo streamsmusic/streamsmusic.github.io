@@ -2657,7 +2657,7 @@
                 <button class="queue-button">
                     <span class="material-symbols-rounded" style="font-size: 18px;">format_list_bulleted</span>
                 </button>
-                <google-cast-launcher id="castBtn" style="width: 37px; height: 37px; --connected-color: var(--accent); --disconnected-color: var(--text-color);"></google-cast-launcher>
+                <google-cast-launcher id="castBtn" style="width: 18px; height: 18px; margin: 9px; --connected-color: var(--accent); --disconnected-color: var(--text-color);"></google-cast-launcher>
             </div>
             <div id="moreOptionsMenu" class="more-options-menu">
                 <div class="menu-item" id="menuFullscreenBtn">
@@ -4235,7 +4235,8 @@ function resetPlayer() {
                     // Try to stream directly first for immediate playback
                     const streamInfo = await resolveTidalUrl(tidalSong);
                     if (streamInfo && streamInfo.url) {
-                        if (!isDataSaver()) repairLocalFile(tidalSong, song.id);
+                        // If casting, we just need the URL. If not, repair local.
+                        if (!castSession && !isDataSaver()) repairLocalFile(tidalSong, song.id);
                         return streamInfo.url;
                     }
                     
@@ -7119,7 +7120,10 @@ async function playSong(song, playContext = null) {
         }
 
         if (castSession) {
+            updatePlayerUI(song);
             loadRemoteMedia();
+            isPlayerLoading = false;
+            return;
         } else {
             if (isHlsStream) {
                 if (typeof Hls !== 'undefined' && Hls.isSupported()) {
@@ -9201,15 +9205,18 @@ window.__onGCastApiAvailable = function(isAvailable) {
 async function loadRemoteMedia() {
     if (!castSession || !currentlyPlayingSong) return;
     
-    // Remote casting only works with streaming URLs
     let streamUrl = currentlyPlayingSong.streamUrl;
-    if (!streamUrl && currentlyPlayingSong.storage === 'tidal') {
+    const isLocal = currentlyPlayingSong.storage !== 'tidal';
+
+    if (isLocal) {
+        streamUrl = await recoverMissingLocalSong(currentlyPlayingSong);
+    } else if (!streamUrl) {
         const resolved = await resolveTidalUrl(currentlyPlayingSong);
         streamUrl = resolved?.url;
     }
     
     if (!streamUrl) {
-        showToast("Local files cannot be cast to Chromecast");
+        showToast("Casting for local files is not supported");
         return;
     }
 
