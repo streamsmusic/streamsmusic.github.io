@@ -402,7 +402,12 @@
             align-content: center;
             flex-direction: row;
             gap: 14px;
-            margin: calc(90px + env(safe-area-inset-bottom)) 0 0 0;
+            margin: 90px 0 0 0;
+        }
+
+        @media (env(safe-area-inset-bottom) > 0px) {
+        .toolbar-btns {
+            margin: calc(env(safe-area-inset-bottom) - 90px) 0 0 0;
         }
 
         .toolbar::after {
