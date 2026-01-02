@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Streams</title>
     <link id="favicon" rel="icon" type="image/png" href="favicon.png">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -62,7 +64,7 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif, 'Apple Color Emoji';
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Inter', sans-serif, 'Apple Color Emoji';
             -webkit-tap-highlight-color: transparent;
         }
         
@@ -460,11 +462,33 @@
         .view-container::-webkit-scrollbar-thumb { background-color: var(--search-background); border-radius: 50px; }
 
         #now-playing-view {
-            padding-top: 0;
             padding: 0;
-            display: flex;
+            display: none; /* Default hidden */
             align-items: center;
             justify-content: center;
+            position: fixed; /* Fixed overlay for smooth transitions */
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1005; /* Above normal content, below modals */
+            background-color: var(--background-color);
+            opacity: 0;
+            transform: translateY(80%) scale(0.8); /* Slight slide up effect */
+            transition: all 0.3s cubic-bezier(.3, 1.2, .64, 1) !important;
+            pointer-events: none;
+            filter: blur(10px);
+            border-radius: 200px;
+            corner-shape: superellipse(1.5);
+            overflow: clip;
+        }
+
+        #now-playing-view.visible {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+            filter: none;
+            border-radius: 0;
         }
 
         #bottom-miniplayer {
@@ -2002,7 +2026,7 @@
                 justify-content: start;
             }
 
-            #now-playing-view.panel-is-open .now-playing-wrapper > *:not(.controls-container):not(#moreOptionsMenu) {
+            #now-playing-view.panel-is-open .now-playing-wrapper > *:not(.controls-container):not(#moreOptionsMenu):not(.hitpoint-drawer-handle-player) {
                 opacity: 0;
             }
             
@@ -2680,7 +2704,7 @@
             If you enable a third-party service, you agree to the Terms of Service and other polices of that service.
             <div style="display: flex; flex-direction: column; gap: 15px; padding-top: 15px;">
                 <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <label for="tidalToggle">Enable Streaming (QQDL)</label>
+                    <label for="tidalToggle">Enable Streaming</label>
                     <input type="checkbox" id="tidalToggle">
                 </div>
 
@@ -2688,9 +2712,9 @@
                 <div style="display: flex; flex-direction: column; gap: 5px;">
                     <label for="prefAudioQuality" style="font-size: 14px; color: var(--secondary-text-color);">Streaming Quality</label>
                     <select id="prefAudioQuality" class="library-search-input" style="padding: 8px 15px;">
-                        <option value="LOSSLESS">Lossless (FLAC)</option>
-                        <option value="HIGH">High (320kbps)</option>
-                        <option value="LOW">Low (96kbps)</option>
+                        <option value="LOSSLESS">Highest</option>
+                        <option value="HIGH">320kbps</option>
+                        <option value="LOW">96kbps</option>
                     </select>
                 </div>
 
@@ -2861,6 +2885,7 @@
         const body = document.body;
         const menuBtn = document.createElement('button');
         const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
         let activeView = 'home'; // 'home', 'library', 'search', 'nowPlaying'
         let isPanelVisible = false;
@@ -3576,7 +3601,6 @@ function setView(viewName) {
     const previousView = activeView;
 
     // Smart Navigation State Tracking
-    // Only update lastMainView if we are entering the player from a main view.
     if (isNowPlaying) {
         if (previousView !== 'now-playing') {
             lastMainView = previousView;
@@ -3586,30 +3610,82 @@ function setView(viewName) {
     }
 
     // Handle Search State Persistence
-    // Only clear search input if we are explicitly leaving search for another main tab (e.g. Home).
-    // Do NOT clear if we are just opening/closing the player.
     if (previousView === 'search' && !isNowPlaying && viewName !== 'search') {
         document.getElementById('searchInput').value = '';
-        renderSearchResults(); // Clears grid visually
+        renderSearchResults(); 
     }
 
     activeView = viewName;
 
-    // Animation & Background Logic
+    // --- Transition Logic ---
+    const nowPlayingEl = document.getElementById('now-playing-view');
+
     if (isNowPlaying) {
+        // OPENING PLAYER
         body.style.backgroundColor = 'var(--background-color)';
         if (!animationFrameId) animateCanvas();
         if (!visualizerFrameId && visualizerDraw) visualizerDraw();
+
+        // 1. Ensure Player is display:flex but invisible
+        nowPlayingEl.style.display = 'flex';
+        
+        // 2. Force reflow to enable transition
+        void nowPlayingEl.offsetWidth; 
+
+        // 3. Add visible class to trigger fade in
+        nowPlayingEl.classList.add('visible');
+
+        // Note: We leave the underlying view (e.g. Home) visible behind the player 
+        // to ensure the transition looks smooth (no white flash). 
+        // Since the player is fixed/z-indexed, it covers it.
+
     } else {
-        if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-            animationFrameId = null;
+        // CLOSING PLAYER or SWITCHING TABS
+        if (previousView === 'now-playing') {
+            // We are closing the player.
+            // 1. Remove visible class to trigger fade out
+            nowPlayingEl.classList.remove('visible');
+
+            // 2. Wait for transition, then display: none
+            setTimeout(() => {
+                if (activeView !== 'now-playing') {
+                    nowPlayingEl.style.display = 'none';
+                    
+                    // Stop heavy animations after fade out is done
+                    if (animationFrameId) { cancelAnimationFrame(animationFrameId); animationFrameId = null; }
+                    if (visualizerFrameId) { cancelAnimationFrame(visualizerFrameId); visualizerFrameId = null; }
+                }
+            }, 300); // Match CSS transition duration
+            
+            body.style.backgroundColor = '';
+        } else {
+            // Switching between normal tabs (Home -> Library) - Instant switch
+            // Ensure player is hidden if we weren't in it
+            nowPlayingEl.style.display = 'none';
+            nowPlayingEl.classList.remove('visible');
+            body.style.backgroundColor = '';
         }
-        if (visualizerFrameId) {
-            cancelAnimationFrame(visualizerFrameId);
-            visualizerFrameId = null;
-        }
-        body.style.backgroundColor = '';
+
+        // Render target view immediately
+        viewContainers.forEach(container => {
+            // Skip now-playing in this loop as we handled it manually above
+            if (container.id === 'now-playing-view') return;
+
+            const isVisible = container.id === `${viewName}-view`;
+            container.style.display = isVisible ? 'flex' : 'none';
+
+            if (isVisible) {
+                if (scrollPositions[viewName] !== undefined) {
+                    container.scrollTop = scrollPositions[viewName];
+                }
+                
+                if (viewName === 'library') { renderLibraryPage(); } 
+                else if (viewName === 'home') { renderHomePage(); } 
+                else if (viewName === 'radio') renderRadioPage();
+                else if (viewName === 'tidal') rendertidalPage();
+                else if (viewName === 'search') { renderSearchResults(); }
+            }
+        });
     }
     
     // Tab State
@@ -3617,25 +3693,6 @@ function setView(viewName) {
         btn.classList.toggle('active', btn.dataset.view === viewName);
     });
 
-    // View Container Visibility & Rendering
-    viewContainers.forEach(container => {
-        const isVisible = container.id === `${viewName}-view`;
-        container.style.display = isVisible ? 'flex' : 'none';
-
-        if (isVisible) {
-            // Restore scroll position if available (handled mostly by render functions, but good to have)
-            if (scrollPositions[viewName] !== undefined && !isNowPlaying) {
-                container.scrollTop = scrollPositions[viewName];
-            }
-
-            if (viewName === 'library') { renderLibraryPage(); } 
-            else if (viewName === 'home') { renderHomePage(); } 
-            else if (viewName === 'radio') renderRadioPage();
-            else if (viewName === 'tidal') rendertidalPage();
-            else if (viewName === 'search') { renderSearchResults(); }
-        }
-    });
-    
     if (isNowPlaying && currentSongId) {
         const song = currentlyPlayingSong; 
         if (song) updatePlayerUI(song);
@@ -3647,7 +3704,7 @@ function setView(viewName) {
     updateMiniplayerUI(currentlyPlayingSong, audioPlayer.paused ? 'paused' : 'playing');
 
     document.getElementById('distortion-container').classList.toggle('active', isNowPlaying);
-    if (isVisualizerInitialized && isNowPlaying && audioContext.state === 'suspended') {
+    if (isVisualizerInitialized && isNowPlaying && audioContext && audioContext.state === 'suspended') {
         audioContext.resume();
     }
 }
@@ -4932,6 +4989,14 @@ function initVisualizer() {
         const canvas = document.getElementById('visualizerCanvas');
         if (canvas) canvas.style.display = 'none';
         return; 
+    }
+
+    // iOS Fix: Disable Web Audio API graph to ensure stable background playback.
+    // iOS Safari aggressively suspends AudioContexts in the background, which 
+    // silences audio routed through createMediaElementSource.
+    if (isIOS) {
+        isVisualizerInitialized = true; 
+        return;
     }
 
     if (isVisualizerInitialized) return;
@@ -9163,6 +9228,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         setupDrawerInteractions();
         setupSwipeGestures();
+
+        // Player Handle Mouse Click Support
+        const playerHandle = document.querySelector('.hitpoint-drawer-handle-player');
+        if (playerHandle) {
+            playerHandle.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent triggering other touch events
+                if (isPanelVisible) {
+                    closePanel();
+                } else {
+                    setView(lastMainView); // Minimize player
+                }
+            });
+        }
     } catch (error) {
         console.error('Failed to initialize application:', error);
     }
