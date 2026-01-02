@@ -4161,11 +4161,90 @@ function resetPlayer() {
             const remainingSeconds = Math.floor(seconds % 60);
             return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
         }
+
+        function isDataSaver() {
+            if (navigator.connection) {
+                if (navigator.connection.saveData) return true;
+                if (['slow-2g', '2g', '3g'].includes(navigator.connection.effectiveType)) return true;
+            }
+            return false;
+        }
         
-function makeElementsDraggable() {
-      // This function is intentionally left blank to disable drag-and-drop for the library view.
-      // Drag-and-drop for the queue is handled by a separate function.
-}
+        async function saveBlobToLocalFile(id, blob) {
+            const tx = db.transaction('musicFiles', 'readwrite');
+            tx.objectStore('musicFiles').put({ id: id, file: blob });
+            await tx.done;
+        }
+
+        async function repairLocalFile(tidalSong, localId) {
+            try {
+                // Background download to restore the file
+                const cached = await processAndCacheAudio(tidalSong);
+                if (cached && cached.blob) {
+                    await saveBlobToLocalFile(localId, cached.blob);
+                    
+                    // Clean up tidal cache to avoid duplication, as we now have it in musicFiles
+                    const tx = db.transaction('tidalCache', 'readwrite');
+                    tx.objectStore('tidalCache').delete(tidalSong.id);
+                    await tx.done;
+                    console.log(`Repaired local file for song ${localId}`);
+                    showToast("Song downloaded and restored");
+                }
+            } catch (e) {
+                console.error("Background repair failed", e);
+            }
+        }
+
+        async function recoverMissingLocalSong(song) {
+            if (!istidalEnabled) return null;
+            
+            const query = song.isrc || `${song.artist} - ${song.name}`;
+            console.log(`Attempting to recover missing song: ${query}`);
+            
+            try {
+                // Search Tidal for a match
+                const searchRes = await fetchHifi(`/search/?s=${encodeURIComponent(query)}&limit=5`);
+                const searchJson = await searchRes.json();
+                const items = (searchJson.data || searchJson).items || [];
+                
+                // Fuzzy match strategy
+                const match = items.find(t => 
+                    t.title.toLowerCase() === song.name.toLowerCase() && 
+                    (t.artist.name.toLowerCase().includes(song.artist.toLowerCase()) || song.artist.toLowerCase().includes(t.artist.name.toLowerCase()))
+                ) || items[0];
+                
+                if (!match) return null;
+                
+                const tidalSong = {
+                    id: match.id,
+                    name: match.title,
+                    artist: match.artist.name,
+                    album: match.album.title,
+                    storage: 'tidal'
+                };
+                
+                // 1. Try to stream immediately
+                const streamInfo = await resolveTidalUrl(tidalSong);
+                if (streamInfo) {
+                    // Trigger self-healing download in background if NOT in data saver mode
+                    if (!isDataSaver()) {
+                        repairLocalFile(tidalSong, song.id);
+                    }
+                    return streamInfo.url;
+                }
+                
+                // 2. Fallback to download-and-play
+                const cached = await processAndCacheAudio(tidalSong);
+                if (cached && cached.blob) {
+                    saveBlobToLocalFile(song.id, cached.blob);
+                    return URL.createObjectURL(cached.blob);
+                }
+                
+            } catch (e) {
+                console.warn("Recovery failed:", e);
+            }
+            return null;
+        }
 
 // Function to update the songs array based on the DOM order
 function updateSongsArrayFromDOM() {
@@ -6992,8 +7071,18 @@ async function playSong(song, playContext = null) {
         setupBpm(song);
         
         // This await is the critical part. If we pause() before this, iOS kills the background task.
-        const fileUrl = song.blobUrl || song.streamUrl || await getSongFileUrl(song);
+        let fileUrl = song.blobUrl || song.streamUrl || await getSongFileUrl(song);
         
+        if (!fileUrl) {
+            // Self-healing: If local file is missing, try to stream from cloud and restore it
+            if (song.storage !== 'tidal') {
+                 fileUrl = await recoverMissingLocalSong(song);
+                 if (fileUrl) {
+                     showToast("Streaming from cloud...");
+                 }
+            }
+        }
+
         if (!fileUrl) {
             throw new Error(`Could not get a playable URL for ${song.name}`);
         }
@@ -7261,7 +7350,7 @@ function initModalVariables() {
 }
 
 document.getElementById('gDriveSyncBtn').addEventListener('click', () => syncLibraryToDrive(true));
-        
+
 function openManageFoldersModal() {
     document.getElementById('tidalToggle').checked = istidalEnabled;
     document.getElementById('lrclibToggle').checked = isLrclibEnabled;
@@ -7957,7 +8046,14 @@ async function processAndCacheAudio(songObject, signal = null) {
     try {
         // 1. Configure Quality Order based on Settings
         // Use global prefAudioQuality if available, otherwise default to LOSSLESS
-        const userPref = (typeof prefAudioQuality !== 'undefined') ? prefAudioQuality : 'LOSSLESS';
+        let userPref = (typeof prefAudioQuality !== 'undefined') ? prefAudioQuality : 'LOSSLESS';
+        
+        // Data Saver Awareness
+        if (isDataSaver()) {
+            console.log("Data Saver detected. Downgrading quality to LOW.");
+            userPref = 'LOW';
+        }
+        
         const allQualities = ['LOSSLESS', 'HIGH', 'LOW'];
         
         let qualityLevelsToTry = [userPref];
@@ -8114,7 +8210,9 @@ async function processAndCacheAudio(songObject, signal = null) {
 
 // New helper to resolve stream URL without downloading the whole file
 async function resolveTidalUrl(songObject) {
-    const userPref = (typeof prefAudioQuality !== 'undefined') ? prefAudioQuality : 'LOSSLESS';
+    let userPref = (typeof prefAudioQuality !== 'undefined') ? prefAudioQuality : 'LOSSLESS';
+    if (isDataSaver()) userPref = 'LOW';
+    
     const allQualities = ['LOSSLESS', 'HIGH', 'LOW'];
     
     let qualityLevelsToTry = [userPref];
