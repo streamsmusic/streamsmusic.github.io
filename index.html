@@ -2658,10 +2658,6 @@
                 <button class="queue-button">
                     <span class="material-symbols-rounded" style="font-size: 18px;">format_list_bulleted</span>
                 </button>
-                <div class="volume-control">
-                    <span class="material-symbols-rounded" id="volumeIcon">volume_up</span>
-                    <input type="range" class="volume-slider" min="0" max="100" value="100">
-                </div>
             </div>
             <div id="moreOptionsMenu" class="more-options-menu">
                 <div class="menu-item" id="menuFullscreenBtn">
@@ -2899,7 +2895,6 @@
         const progress = document.querySelector('.progress');
         const currentTimeDisplay = document.getElementById('currentTime');
         const durationDisplay = document.getElementById('duration');
-        const volumeSlider = document.querySelector('.volume-slider');
         const musicTitle = document.querySelector('.music-title');
         const musicArtist = document.querySelector('.music-artist');
         const albumArtImg = document.getElementById('albumArtImg');
@@ -6461,25 +6456,26 @@ async function playSong(song, playContext = null) {
     setPlayerLoadingState(true, song); 
 
     try {
-        // iOS Background Fix: Do not pause or clear src before the async fetch.
-        // Fetching the URL first keeps the background session active during the wait.
+        // iOS Fix: Resolve URL *before* touching the audio element to keep session alive
         lastActiveTimestamp = -1;
         song.hasBeenLogged = false;
         currentlyPlayingSong = song;
         setupBpm(song);
         
+        // This await is the critical part. If we pause() before this, iOS kills the background task.
         const fileUrl = song.blobUrl || song.streamUrl || await getSongFileUrl(song);
         
         if (!fileUrl) {
             throw new Error(`Could not get a playable URL for ${song.name}`);
         }
 
-        // --- Audio Element Updates (Sync block) ---
+        // --- Synchronous Audio Setup ---
+        // Now that we have the URL, we swap sources immediately
         
         if (audioPlayer.src && audioPlayer.src.startsWith('blob:')) {
             URL.revokeObjectURL(audioPlayer.src);
         }
-
+        
         if (hls) {
             hls.destroy();
             hls = null;
@@ -6487,6 +6483,7 @@ async function playSong(song, playContext = null) {
 
         const isHlsStream = song.streamUrl && song.streamUrl.includes('.m3u8');
         const isCrossOriginStream = song.storage === 'tidal' && !song.blobUrl;
+        
         if (isCrossOriginStream) {
             audioPlayer.crossOrigin = "anonymous";
             disconnectAudioGraph();
@@ -6544,20 +6541,8 @@ async function playSong(song, playContext = null) {
                     }
                 });
             };
-            if (audioPlayer.readyState >= 3) {
-                playAudio();
-            } else {
-                audioPlayer.oncanplay = () => {
-                    audioPlayer.oncanplay = null;
-                    audioPlayer.onerror = null;
-                    playAudio();
-                };
-                audioPlayer.onerror = (e) => {
-                    audioPlayer.oncanplay = null;
-                    audioPlayer.onerror = null;
-                    reject(e.target.error || new Error("Unknown audio player error"));
-                };
-            }
+            // iOS optimization: trigger play immediately
+            playAudio();
         });
 
         lastSongStartTime = Date.now();
@@ -7601,6 +7586,73 @@ async function processAndCacheAudio(songObject, signal = null) {
         return null;
     }
 }
+
+// New helper to resolve stream URL without downloading the whole file
+async function resolveTidalUrl(songObject) {
+    const userPref = (typeof prefAudioQuality !== 'undefined') ? prefAudioQuality : 'LOSSLESS';
+    const allQualities = ['LOSSLESS', 'HIGH', 'LOW'];
+    
+    let qualityLevelsToTry = [userPref];
+    allQualities.forEach(q => { if (!qualityLevelsToTry.includes(q)) qualityLevelsToTry.push(q); });
+
+    // 1. Try /track/ endpoint
+    for (const quality of qualityLevelsToTry) {
+        try {
+            const response = await fetchHifi(`/track/?id=${songObject.id}&quality=${quality}`);
+            if (response.ok) {
+                const data = (await response.json()).data || {};
+                
+                // Update metadata if available
+                if (data.peak) songObject.peak = data.peak;
+                if (data.bpm) songObject.bpm = data.bpm;
+
+                if (data.manifest) {
+                    const decoded = JSON.parse(atob(data.manifest));
+                    if (decoded.urls && decoded.urls[0]) {
+                        return { url: decoded.urls[0], quality };
+                    }
+                }
+            }
+        } catch(e) { /* continue */ }
+    }
+
+    // 2. Fallback to /dash/ endpoint
+    for (const quality of qualityLevelsToTry) {
+        try {
+            const response = await fetchHifi(`/dash/?id=${songObject.id}&quality=${quality}`);
+            if (!response.ok) continue;
+
+            const text = await response.text();
+            if (text && text.trim().startsWith('<?xml')) {
+                // XML Manifest logic
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(text, "application/xml");
+                const representation = xmlDoc.querySelector("Representation");
+                const segmentTemplate = representation.querySelector("SegmentTemplate");
+                const mediaUrlTemplate = segmentTemplate.getAttribute("media");
+                
+                // Construct a direct URL for the first segment (often works for playback start) 
+                // or just fail over to processAndCacheAudio if DASH is strict.
+                // However, usually DASH requires MediaSource Extensions which don't work well 
+                // in standard Audio tags without HLS.js or Dash.js.
+                // For this specific API, often the XML route implies complex handling.
+                // We will return null here to force the fallback or error, 
+                // BUT many of these endpoints also return JSON on other qualities.
+                
+                // Optimized: If we hit XML, we might be better off skipping "Stream Direct" 
+                // and letting the robust downloader handle it, OR just return null.
+            } else {
+                try {
+                    const json = JSON.parse(text);
+                    if (json && json.urls && json.urls[0]) {
+                        return { url: json.urls[0], quality };
+                    }
+                } catch (e) {}
+            }
+        } catch (e) {}
+    }
+    return null;
+}
         
 async function updatetidalCacheWithLyrics(song) {
     if (!song || song.storage !== 'tidal') return;
@@ -7701,23 +7753,36 @@ async function playtidalTrack(trackId, playContext = null) {
         currentSongId = songObject.id;
         setPlayerLoadingState(true, songObject);
 
-        console.log("Track not cached. Processing audio before playback.");
+        console.log("Track not cached. Resolving stream URL...");
         
-        // PASS SIGNAL to halt download if skipped
-        const newCachedSong = await processAndCacheAudio(songObject, signal);
+        // iOS Fix: Stream immediately instead of downloading
+        const streamData = await resolveTidalUrl(songObject);
         
-        if (signal.aborted) {
-            console.log("Playback aborted before starting.");
-            return;
-        }
-        
-        if (newCachedSong) {
-            const songToPlay = newCachedSong.metadata;
-            songToPlay.blobUrl = URL.createObjectURL(newCachedSong.blob);
-            await playSong(songToPlay, playContext);
-            fetchAndUpdateLyrics(songToPlay);
+        if (signal.aborted) return;
+
+        if (streamData) {
+            // We found a direct stream URL
+            console.log(`Stream URL found [${streamData.quality}]. Playing directly.`);
+            songObject.streamUrl = streamData.url;
+            songObject.audioQuality = streamData.quality;
+            
+            await playSong(songObject, playContext);
+            fetchAndUpdateLyrics(songObject);
         } else {
-            throw new Error("Caching and processing failed.");
+            // Fallback: If quick resolve failed, try the full processor (slower, but robust)
+            console.log("Quick resolve failed. Attempting full process...");
+            const newCachedSong = await processAndCacheAudio(songObject, signal);
+            
+            if (signal.aborted) return;
+
+            if (newCachedSong) {
+                const songToPlay = newCachedSong.metadata;
+                songToPlay.blobUrl = URL.createObjectURL(newCachedSong.blob);
+                await playSong(songToPlay, playContext);
+                fetchAndUpdateLyrics(songToPlay);
+            } else {
+                throw new Error("Unable to resolve audio stream.");
+            }
         }
     } catch (error) {
         if (signal.aborted) return; // Ignore errors caused by abort
@@ -8725,15 +8790,6 @@ progressBar.addEventListener("touchstart", () => { isDragging = true; }, { passi
 document.addEventListener("touchend", () => { isDragging = false; });
 document.addEventListener("touchmove", e => handleProgressDrag(e), { passive: true });
 
-
-volumeSlider.addEventListener('input', (e) => {
-    const volume = e.target.value / 100;
-    audioPlayer.volume = volume;
-    if (volume === 0) volumeIcon.textContent = 'volume_mute';
-    else if (volume < 0.5) volumeIcon.textContent = 'volume_down';
-    else volumeIcon.textContent = 'volume_up';
-});
-
 audioPlayer.addEventListener('pause', () => {
     const nowPlayingView = document.getElementById('now-playing-view');
     if(nowPlayingView) nowPlayingView.classList.add('paused');
@@ -9145,7 +9201,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Toggle additional styles based on fullscreen state
             const albumArt = document.querySelector('.album-art');
             const playerControls = document.querySelector('.player-controls');
-            const volumeControl = document.querySelector('.volume-control');
             
             if (albumArt) {
                 albumArt.style.setProperty('margin-top', isFullscreen ? '0px' : '', 'important');
