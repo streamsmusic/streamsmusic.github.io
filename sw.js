@@ -2,6 +2,8 @@ const CACHE_NAME = 'streams-cache-v3.0';
 
 const ASSETS_TO_CACHE = [
   '/index.html',
+  '/polygol.html',
+  '/streams.png',
   '/favicon.png'
 ];
 
