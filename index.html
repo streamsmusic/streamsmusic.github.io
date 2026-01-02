@@ -11,7 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,0">    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -1556,7 +1556,6 @@
         #shuffleBtn.active, #repeatBtn.active {
             backdrop-filter: blur(8px);
             background: var(--search-background);
-            border: 1px solid var(--glass-border);
         }
                 
         .material-symbols-rounded {
@@ -2748,7 +2747,21 @@
 
             <div class="menu-separator" style="margin: 15px 0;"></div>
                 
-            <h3 style="font-size: 1rem; margin-bottom: 10px;">Library Data</h3>
+            <h3 style="font-size: 1rem; margin-bottom: 10px;">Cloud Library</h3>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;">
+                <input type="text" id="gDriveClientId" placeholder="Paste Google Client ID here" class="library-search-input" style="padding: 8px 15px;">
+                <div style="display: flex; gap: 10px;">
+                    <button id="gDriveLoginBtn" class="filter-btn">
+                        <span class="material-symbols-rounded" style="font-size: 18px; margin-right: 5px;">login</span> Login
+                    </button>
+                    <button id="gDriveSyncBtn" class="filter-btn active" style="flex: 1; display: none;">
+                        <span class="material-symbols-rounded" style="font-size: 18px; margin-right: 5px;">sync</span> Sync Library
+                    </button>
+                </div>
+                <small id="gDriveStatus" style="color: var(--secondary-text-color); font-size: 11px;">Not connected</small>
+            </div>
+                
+            <h3 style="font-size: 1rem; margin-bottom: 10px;">Local Library</h3>
             <div style="display: flex; gap: 10px;">
                 <button id="exportLibraryBtn" class="filter-btn" style="flex: 1;">
                     <span class="material-symbols-rounded" style="font-size: 18px; vertical-align: middle; margin-right: 5px;">upload</span> Export
@@ -2758,9 +2771,6 @@
                 </button>
                 <input type="file" id="importLibraryInput" accept=".json" style="display: none;">
             </div>
-            <p style="font-size: 12px; color: var(--secondary-text-color); margin-top: 5px;">
-                Exports playlists, history, and song metadata.
-            </p>
 
             <div style="display: flex; justify-content: flex-end; margin-top: 25px; gap: 10px;">
                 <button id="saveIntegrations" class="filter-btn active">Close</button>
@@ -8841,6 +8851,11 @@ window.addEventListener("load", async () => {
         const qualityRes = await new Promise(r => { qualityReq.onsuccess = () => r(qualityReq.result) });
         const cacheRes = await new Promise(r => { cacheReq.onsuccess = () => r(cacheReq.result) });
         const streamOnlyRes = await new Promise(r => { streamOnlyReq.onsuccess = () => r(streamOnlyReq.result) });
+
+        // Load Google Client ID
+        const gClientIdReq = configTx.objectStore('config').get('gDriveClientId');
+        const gClientIdRes = await new Promise(r => { gClientIdReq.onsuccess = () => r(gClientIdReq.result) });
+        if (gClientIdRes) document.getElementById('gDriveClientId').value = gClientIdRes.value;
         
         tidalClientId = scIdResult ? scIdResult.value : '';
         istidalEnabled = scEnabledResult ? scEnabledResult.value : false;
@@ -9606,6 +9621,156 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('repeatBtn').addEventListener('click', toggleRepeat);
 
         document.getElementById('manageFoldersBtn').addEventListener('click', openManageFoldersModal);
+        
+        document.getElementById('saveIntegrations').addEventListener('click', async () => {
+            // Save Google Client ID
+            const gClientId = document.getElementById('gDriveClientId').value.trim();
+            const tx = db.transaction('config', 'readwrite');
+            tx.objectStore('config').put({ key: 'gDriveClientId', value: gClientId });
+            await tx.done;
+            saveIntegrationSettings();
+        });
+        
+        // --- Google Drive Sync Logic ---
+        let tokenClient;
+        let gAccessToken = null;
+        const SYNC_FILENAME = 'streams_library_metadata.json';
+
+        document.getElementById('gDriveLoginBtn').addEventListener('click', () => {
+            const clientId = document.getElementById('gDriveClientId').value.trim();
+            if (!clientId) return showToast("Please enter a Google Client ID");
+
+            if (!tokenClient) {
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: clientId,
+                    scope: 'https://www.googleapis.com/auth/drive.file',
+                    callback: (response) => {
+                        if (response.error !== undefined) {
+                            throw (response);
+                        }
+                        gAccessToken = response.access_token;
+                        document.getElementById('gDriveStatus').textContent = "Connected. Ready to sync.";
+                        document.getElementById('gDriveLoginBtn').style.display = 'none';
+                        document.getElementById('gDriveSyncBtn').style.display = 'flex';
+                        document.getElementById('gDriveClientId').disabled = true;
+                    },
+                });
+            }
+            tokenClient.requestAccessToken();
+        });
+
+        document.getElementById('gDriveSyncBtn').addEventListener('click', async () => {
+            if (!gAccessToken) return;
+            showToast("Syncing with Drive...");
+            
+            try {
+                // 1. Export local data
+                const tx = db.transaction(['songs', 'playlists', 'playHistory'], 'readonly');
+                const [songsData, playlistsData, historyData] = await Promise.all([
+                    promiseIDBRequest(tx.objectStore('songs').getAll()),
+                    promiseIDBRequest(tx.objectStore('playlists').getAll()),
+                    promiseIDBRequest(tx.objectStore('playHistory').getAll())
+                ]);
+
+                const localExport = {
+                    timestamp: Date.now(),
+                    songs: songsData,
+                    playlists: playlistsData,
+                    history: historyData
+                };
+
+                // 2. Find existing file
+                const q = `name = '${SYNC_FILENAME}' and trashed = false`;
+                const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}`, {
+                    headers: { 'Authorization': `Bearer ${gAccessToken}` }
+                });
+                const searchData = await searchRes.json();
+                const file = searchData.files && searchData.files.length > 0 ? searchData.files[0] : null;
+
+                if (file) {
+                    // 3. Download cloud data
+                    const downloadRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+                        headers: { 'Authorization': `Bearer ${gAccessToken}` }
+                    });
+                    const cloudData = await downloadRes.json();
+
+                    // 4. Merge Strategy: Newer timestamp wins
+                    if (cloudData.timestamp > localExport.timestamp) {
+                        if (await showConfirmDialog(`Cloud save is newer (${new Date(cloudData.timestamp).toLocaleString()}). Overwrite local?`)) {
+                            // Restore from Cloud
+                            await restoreFromData(cloudData);
+                            showToast("Local library updated from Cloud.");
+                            return; // Stop here, we don't upload back immediately
+                        }
+                    }
+                }
+
+                // 5. Upload (Create or Update)
+                const fileContent = JSON.stringify(localExport);
+                const metadata = {
+                    name: SYNC_FILENAME,
+                    mimeType: 'application/json'
+                };
+
+                const form = new FormData();
+                form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+                form.append('file', new Blob([fileContent], { type: 'application/json' }));
+
+                let uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+                let method = 'POST';
+
+                if (file) {
+                    uploadUrl = `https://www.googleapis.com/upload/drive/v3/files/${file.id}?uploadType=multipart`;
+                    method = 'PATCH';
+                }
+
+                const uploadRes = await fetch(uploadUrl, {
+                    method: method,
+                    headers: { 'Authorization': `Bearer ${gAccessToken}` },
+                    body: form
+                });
+
+                if (uploadRes.ok) {
+                    showToast("Library saved to Drive.");
+                    document.getElementById('gDriveStatus').textContent = `Last sync: ${new Date().toLocaleTimeString()}`;
+                } else {
+                    throw new Error("Upload failed");
+                }
+
+            } catch (e) {
+                console.error("Drive Sync Error:", e);
+                showToast("Sync failed. See console.");
+            }
+        });
+
+        // Helper to reuse import logic
+        async function restoreFromData(data) {
+            const tx = db.transaction(['songs', 'playlists', 'playHistory'], 'readwrite');
+            await Promise.all([
+                tx.objectStore('songs').clear(),
+                tx.objectStore('playlists').clear(),
+                tx.objectStore('playHistory').clear()
+            ]);
+
+            const songStore = tx.objectStore('songs');
+            for (const song of data.songs) songStore.put(song);
+            
+            if (data.playlists) {
+                const plStore = tx.objectStore('playlists');
+                for (const pl of data.playlists) plStore.put(pl);
+            }
+            if (data.history) {
+                const histStore = tx.objectStore('playHistory');
+                for (const h of data.history) histStore.put(h);
+            }
+            await tx.done;
+            
+            await loadSongsAndPlaylists();
+            if (activeView === 'library') renderLibraryPage();
+            if (activeView === 'home') renderHomePage();
+            restoreTidalDownloads(data.songs);
+        }
+
         document.getElementById('saveIntegrations').addEventListener('click', saveIntegrationSettings);
 
         // --- Library Export/Import Logic ---
