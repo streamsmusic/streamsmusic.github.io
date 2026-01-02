@@ -8056,12 +8056,23 @@ function makeQueueItemsDraggable() {
     if (!container) return;
     let draggedQueueItem = null;
 
-    container.querySelectorAll('.queue-item').forEach(item => {
+    // Touch variables
+    let touchTimeout;
+    let isTouchDragging = false;
+    let touchGhost = null;
+    let touchStartY = 0;
+
+    const items = container.querySelectorAll('.queue-item');
+
+    items.forEach(item => {
+        // --- Desktop Drag & Drop (HTML5 API) ---
         item.setAttribute('draggable', 'true');
+        
         item.addEventListener('dragstart', () => {
             draggedQueueItem = item;
             setTimeout(() => item.classList.add('dragging'), 0);
         });
+
         item.addEventListener('dragend', () => {
             if (draggedQueueItem) {
                 draggedQueueItem.classList.remove('dragging');
@@ -8069,6 +8080,89 @@ function makeQueueItemsDraggable() {
                 updateQueueFromDOM();
             }
         });
+
+        // --- Mobile Touch Drag & Drop ---
+        item.addEventListener('touchstart', (e) => {
+            // Ignore if touching interactive controls inside the row
+            if (e.target.closest('button')) return;
+
+            touchStartY = e.touches[0].clientY;
+            
+            // Long press (250ms) triggers drag mode
+            touchTimeout = setTimeout(() => {
+                isTouchDragging = true;
+                item.classList.add('dragging');
+                
+                // Visual Feedback: Vibration
+                if (navigator.vibrate) navigator.vibrate(50);
+                
+                // Create Ghost Element for visual tracking
+                touchGhost = item.cloneNode(true);
+                touchGhost.style.position = 'fixed';
+                touchGhost.style.zIndex = '9999';
+                touchGhost.style.pointerEvents = 'none';
+                touchGhost.style.opacity = '0.9';
+                touchGhost.style.transform = 'scale(1.05)';
+                touchGhost.style.boxShadow = '0 10px 20px rgba(0,0,0,0.3)';
+                touchGhost.style.background = 'var(--search-background)';
+                touchGhost.style.width = `${item.offsetWidth}px`;
+                touchGhost.style.borderRadius = '16px';
+                
+                // Position ghost at finger location (or original element location initially)
+                const rect = item.getBoundingClientRect();
+                touchGhost.style.top = `${rect.top}px`;
+                touchGhost.style.left = `${rect.left}px`;
+                
+                document.body.appendChild(touchGhost);
+            }, 250); 
+            
+        }, { passive: false });
+
+        item.addEventListener('touchmove', (e) => {
+            const touch = e.touches[0];
+            
+            if (!isTouchDragging) {
+                // If user moves finger significantly before timeout, it's a scroll operation
+                if (Math.abs(touch.clientY - touchStartY) > 5) {
+                    clearTimeout(touchTimeout);
+                }
+                return;
+            }
+
+            // We are dragging, prevent browser scrolling
+            if (e.cancelable) e.preventDefault(); 
+            
+            // Move Ghost
+            if (touchGhost) {
+                touchGhost.style.top = `${touch.clientY - (touchGhost.offsetHeight / 2)}px`;
+                touchGhost.style.left = `${touch.clientX - (touchGhost.offsetWidth / 2)}px`;
+            }
+            
+            // Live Reordering Logic
+            // The item being dragged (.dragging) is excluded from getDragAfterElement queries
+            const afterElement = getDragAfterElement(container, touch.clientY);
+            if (afterElement == null) {
+                container.appendChild(item);
+            } else {
+                container.insertBefore(item, afterElement);
+            }
+        }, { passive: false });
+
+        const endTouchDrag = () => {
+            clearTimeout(touchTimeout);
+            if (isTouchDragging) {
+                isTouchDragging = false;
+                item.classList.remove('dragging');
+                if (touchGhost) {
+                    touchGhost.remove();
+                    touchGhost = null;
+                }
+                updateQueueFromDOM();
+            }
+        };
+
+        item.addEventListener('touchend', endTouchDrag);
+        item.addEventListener('touchcancel', endTouchDrag);
     });
 
     container.addEventListener('dragover', e => {
