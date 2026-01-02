@@ -7569,58 +7569,38 @@ function toggletidalTab() {
                 tidalSearchOffset += 50;
             }
 
-            const path = `/search/?s=${encodeURIComponent(query)}&limit=50&offset=${tidalSearchOffset}`;
+            let param = 's';
+            if (tidalFilter === 'artists') param = 'a';
+            else if (tidalFilter === 'albums') param = 'al';
+            else if (tidalFilter === 'playlists') param = 'p';
+
+            const path = `/search/?${param}=${encodeURIComponent(query)}&offset=${tidalSearchOffset}`;
 
             try {
                 const response = await fetchHifi(path, { signal });
                 if (!response.ok) throw new Error(`API request failed: ${response.statusText}`);
                 
                 const responseData = await response.json();
-                const data = responseData.data || {};
+                let data = responseData.data || {};
+                
+                if (tidalFilter === 'artists' && data.artists) data = data.artists;
+                else if (tidalFilter === 'albums' && data.albums) data = data.albums;
+                else if (tidalFilter === 'playlists' && data.playlists) data = data.playlists;
+                else if (tidalFilter === 'tracks' && data.tracks) data = data.tracks;
+
                 const totalItems = data.totalNumberOfItems || 0;
                 const rawItems = data.items || [];
                 let newItems = [];
     
                 switch (tidalFilter) {
                     case 'artists':
-                        const artistsMap = new Map();
-                        rawItems.forEach(track => {
-                            if (track.artists) {
-                                track.artists.forEach(artist => {
-                                    if (artist && artist.id && !artistsMap.has(artist.id)) {
-                                        artistsMap.set(artist.id, artist);
-                                    }
-                                });
-                            }
-                        });
-                        newItems = Array.from(artistsMap.values());
+                        newItems = rawItems;
                         break;
                     case 'albums':
-                        const albumsMap = new Map();
-                        rawItems.forEach(track => {
-                            if (track.album && track.album.id && !albumsMap.has(track.album.id)) {
-                                albumsMap.set(track.album.id, { ...track.album, artists: track.artists });
-                            }
-                        });
-                        newItems = Array.from(albumsMap.values());
+                        newItems = rawItems;
                         break;
                     case 'playlists':
-                        // Filter for playlists in search results
-                        newItems = rawItems.filter(item => item.type === 'playlist' || item.uuid);
-                        // If no playlists in results, try to search specifically for playlists
-                        if (newItems.length === 0 && query) {
-                            try {
-                                const playlistPath = `/search/?s=${encodeURIComponent(query)}&limit=50&offset=${tidalSearchOffset}&types=PLAYLISTS`;
-                                const playlistResponse = await fetchHifi(playlistPath, { signal });
-                                if (playlistResponse.ok) {
-                                    const playlistData = await playlistResponse.json();
-                                    const playlistItems = (playlistData.data || playlistData).items || [];
-                                    newItems = playlistItems;
-                                }
-                            } catch (e) {
-                                console.warn('Playlist search failed:', e);
-                            }
-                        }
+                        newItems = rawItems;
                         break;
                     case 'tracks':
                     default:
