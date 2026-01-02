@@ -6549,6 +6549,13 @@ async function playSong(song, playContext = null) {
 
         proactivelyCacheNextInQueue();
 
+        // Explicitly unsetting seek handlers HERE (after playback starts) forces the OS 
+        // to render Next/Prev buttons instead of seek buttons for the current item.
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.setActionHandler('seekforward', null);
+            navigator.mediaSession.setActionHandler('seekbackward', null);
+        }
+
         playPauseIcon.textContent = 'pause';
         playPauseBtn.classList.add('playing');
         updateMiniplayerUI(song, 'playing');
@@ -7798,26 +7805,27 @@ async function playtidalTrack(trackId, playContext = null) {
 }
         
 function connectAudioGraph() {
+    // iOS Fix: Never connect the AudioContext graph on iOS. 
+    // It causes resume failures because iOS kills/suspends the context in the background.
+    if (isIOS) return;
+
     if (source && audioContext && eqBass) {
         try {
-            source.disconnect(); // Disconnect everything first to ensure a clean state
-        } catch(e) { /* Fails if not connected, which is fine */ }
-        // Reconnect the full chain: source -> EQ -> analyser -> output
+            source.disconnect(); 
+        } catch(e) { }
         source.connect(eqBass);
         document.getElementById('visualizerCanvas').style.visibility = 'visible';
-        console.log("Audio graph connected for visualizer and EQ.");
     }
 }
 
 function disconnectAudioGraph() {
+    if (isIOS) return;
+
     if (source) {
         try {
-            // Disconnect the source from the processing graph (EQ/analyser).
-            // The HTMLAudioElement will now play directly to the speakers by default.
             source.disconnect();
-        } catch(e) { /* Fails if not connected, which is fine */ }
+        } catch(e) { }
         document.getElementById('visualizerCanvas').style.visibility = 'hidden';
-        console.log("Audio graph disconnected for CORS track. Visualizer/EQ disabled.");
     }
 }
         
@@ -8829,7 +8837,8 @@ audioPlayer.addEventListener('timeupdate', async () => {
 });
         
 playPauseBtn.addEventListener('click', async () => {
-    if (audioContext && audioContext.state === 'suspended') {
+    // Only attempt to resume AudioContext on non-iOS devices
+    if (!isIOS && audioContext && audioContext.state === 'suspended') {
         await audioContext.resume();
     }
     if (!currentSongId) return;
