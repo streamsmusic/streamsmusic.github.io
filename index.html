@@ -7272,45 +7272,34 @@ function updateMiniplayerUI(song, state) {
 async function getSongFileUrl(song) {
     if (!song) return null;
 
-    // Check internal DB first if storage is indexeddb OR as a fallback for filesystem
-    if (song.storage === 'indexeddb' || song.storage === 'filesystem') {
-        try {
-            const tx = db.transaction(['musicFiles'], 'readonly');
-            const request = tx.objectStore('musicFiles').get(song.id);
-            const result = await new Promise((resolve) => {
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => resolve(null);
-            });
-            if (result) return URL.createObjectURL(result.file);
-        } catch (e) {}
+    // 1. Check internal IndexedDB (For 'indexeddb' songs or 'filesystem' fallbacks)
+    try {
+        const tx = db.transaction(['musicFiles'], 'readonly');
+        const request = tx.objectStore('musicFiles').get(song.id);
+        const result = await new Promise((resolve) => {
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve(null);
+        });
+        if (result && result.file) return URL.createObjectURL(result.file);
+    } catch (e) {
+        console.warn("DB check skipped for URL resolution.");
     }
 
+    // 2. Check connected folders for 'filesystem' songs
     if (song.storage === 'filesystem') {
         for (const handle of directoryHandles) {
-            const request = tx.objectStore('musicFiles').get(song.id);
-            const result = await new Promise((resolve, reject) => {
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
-            });
-            return result ? URL.createObjectURL(result.file) : null;
-        } catch (e) {
-             console.error(`Could not get blob for ${song.name}:`, e);
-             return null;
+            try {
+                const fileHandle = await handle.getFileHandle(song.handleName);
+                const file = await fileHandle.getFile();
+                return URL.createObjectURL(file);
+            } catch (e) {
+                if (e.name === 'NotFoundError') continue;
+                console.error(`Error accessing ${song.handleName} in ${handle.name}:`, e);
+            }
         }
     }
 
-    for (const handle of directoryHandles) {
-        try {
-            const fileHandle = await handle.getFileHandle(song.handleName);
-            const file = await fileHandle.getFile();
-            return URL.createObjectURL(file);
-        } catch (e) {
-            if (e.name === 'NotFoundError') continue;
-            console.error(`Error accessing handle for ${song.name} in directory ${handle.name}:`, e);
-        }
-    }
-
-    console.warn(`Could not find "${song.handleName}" in any connected directories.`);
+    console.warn(`Could not find "${song.handleName}" in any connected directories or DB.`);
     return null;
 }
 
