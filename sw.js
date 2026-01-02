@@ -3,8 +3,17 @@ const CACHE_NAME = 'streams-cache-v13.5';
 const ASSETS_TO_CACHE = [
   '/index.html',
   '/polygol.html',
+  '/ko/index.html',
+  'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1',
+  'https://cdn.jsdelivr.net/npm/hls.js@latest',
+  'https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js',
+  'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,0',
+  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap',
+  'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css',
   '/streams.png',
-  '/favicon.png'
+  '/favicon.png',
+  '/ko/streams.png',
+  '/ko/favicon.png'
 ];
 
 // INSTALL: Cache all assets. This now uses a single, simpler call.
