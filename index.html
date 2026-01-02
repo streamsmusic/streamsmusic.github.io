@@ -3511,11 +3511,10 @@ async function restoreTidalDownloads(importedSongs) {
 // Helper to reuse import logic
 async function restoreFromData(data) {
     const tx = db.transaction(['songs', 'playlists', 'playHistory'], 'readwrite');
-    await Promise.all([
-        tx.objectStore('songs').clear(),
-        tx.objectStore('playlists').clear(),
-        tx.objectStore('playHistory').clear()
-    ]);
+    
+    tx.objectStore('songs').clear();
+    tx.objectStore('playlists').clear();
+    tx.objectStore('playHistory').clear();
 
     const songStore = tx.objectStore('songs');
     for (const song of data.songs) songStore.put(song);
@@ -3528,7 +3527,12 @@ async function restoreFromData(data) {
         const histStore = tx.objectStore('playHistory');
         for (const h of data.history) histStore.put(h);
     }
-    await tx.done;
+
+    await new Promise((resolve, reject) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(new Error('Transaction aborted'));
+    });
     
     await loadSongsAndPlaylists();
     if (activeView === 'library') renderLibraryPage();
