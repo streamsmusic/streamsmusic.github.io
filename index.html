@@ -4451,6 +4451,7 @@ async function saveSongs() {
         
         transaction.oncomplete = () => {
             console.log(`Songs saved. Total count: ${songs.length}`);
+            triggerAutoSync();
             resolve();
         };
     });
@@ -5535,6 +5536,8 @@ async function deletePlaylist(playlistId) {
         tx.objectStore('playlists').delete(playlistId);
         await tx.done;
 
+        triggerAutoSync();
+
         // 3. Close the drawer, as its content is now invalid.
         closeDrawer();
 
@@ -5566,6 +5569,8 @@ async function removeSongFromPlaylist(songId, playlistId, event) {
     const tx = db.transaction('playlists', 'readwrite');
     tx.objectStore('playlists').put(playlist);
     await tx.done;
+
+    triggerAutoSync();
     
     if (isPlaylistEditMode) {
         // In edit mode, remove element directly to keep position context for others
@@ -5731,6 +5736,7 @@ async function updatePlaylistOrder(container, playlistId) {
     const tx = db.transaction('playlists', 'readwrite');
     tx.objectStore('playlists').put(playlist);
     await tx.done;
+    triggerAutoSync();
 }
         
 function renderSongs(albums, isArtistView = false) {
@@ -6434,6 +6440,7 @@ async function saveQueueAsPlaylist() {
             });
             
             playlists.push(newPlaylist);
+            triggerAutoSync();
             showToast(`Saved playlist "${name}"`);
             if (activeView === 'library') renderLibraryPage();
         } catch (e) {
@@ -6675,6 +6682,11 @@ async function playSong(song, playContext = null) {
         return;
     }
     
+    if (playContext !== null) {
+        isRadioMode = false;
+        document.body.classList.remove('radio-mode');
+    }
+
     if (playContext && Array.isArray(playContext)) {
         const wasAutoplayEnabled = isAutoplayEnabled;
         playQueue = [...playContext];
@@ -7589,6 +7601,7 @@ async function batchSaveTidalTracks(tracks) {
                 if(song.isrc) isrcToLocalSongMap.set(song.isrc, song);
             });
             
+            triggerAutoSync();
             resolve(results.length);
         };
 
@@ -9458,6 +9471,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const tx = db.transaction('playlists', 'readwrite');
                 tx.objectStore('playlists').put(playlist);
                 await tx.done;
+                triggerAutoSync();
                 
                 document.getElementById('drawer-title').textContent = playlist.name;
                 showToast("Playlist renamed");
@@ -9621,7 +9635,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('repeatBtn').addEventListener('click', toggleRepeat);
 
         document.getElementById('manageFoldersBtn').addEventListener('click', openManageFoldersModal);
-        
+
         document.getElementById('saveIntegrations').addEventListener('click', async () => {
             // Save Google Client ID
             const gClientId = document.getElementById('gDriveClientId').value.trim();
@@ -9659,9 +9673,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             tokenClient.requestAccessToken();
         });
 
-        document.getElementById('gDriveSyncBtn').addEventListener('click', async () => {
+document.getElementById('gDriveSyncBtn').addEventListener('click', () => syncLibraryToDrive(true));
+
+        let syncDebounceTimer;
+        function triggerAutoSync() {
             if (!gAccessToken) return;
-            showToast("Syncing with Drive...");
+            clearTimeout(syncDebounceTimer);
+            syncDebounceTimer = setTimeout(() => {
+                syncLibraryToDrive(false); // Silent sync
+            }, 5000); // Wait 5 seconds after last change
+        }
+
+        async function syncLibraryToDrive(interactive = false) {
+            if (!gAccessToken) return;
+            if (interactive) showToast("Syncing with Drive...");
+            else console.log("Auto-syncing library...");
             
             try {
                 // 1. Export local data
@@ -9688,19 +9714,22 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const file = searchData.files && searchData.files.length > 0 ? searchData.files[0] : null;
 
                 if (file) {
-                    // 3. Download cloud data
+                    // 3. Check timestamp
                     const downloadRes = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
                         headers: { 'Authorization': `Bearer ${gAccessToken}` }
                     });
                     const cloudData = await downloadRes.json();
 
-                    // 4. Merge Strategy: Newer timestamp wins
                     if (cloudData.timestamp > localExport.timestamp) {
-                        if (await showConfirmDialog(`Cloud save is newer (${new Date(cloudData.timestamp).toLocaleString()}). Overwrite local?`)) {
-                            // Restore from Cloud
-                            await restoreFromData(cloudData);
-                            showToast("Local library updated from Cloud.");
-                            return; // Stop here, we don't upload back immediately
+                        if (interactive) {
+                            if (await showConfirmDialog(`Cloud save is newer (${new Date(cloudData.timestamp).toLocaleString()}). Overwrite local?`)) {
+                                await restoreFromData(cloudData);
+                                showToast("Local library updated from Cloud.");
+                                return;
+                            }
+                        } else {
+                            console.warn("Auto-sync skipped: Cloud data is newer.");
+                            return;
                         }
                     }
                 }
@@ -9731,17 +9760,19 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
 
                 if (uploadRes.ok) {
-                    showToast("Library saved to Drive.");
-                    document.getElementById('gDriveStatus').textContent = `Last sync: ${new Date().toLocaleTimeString()}`;
+                    if (interactive) showToast("Library saved to Drive.");
+                    else console.log("Auto-sync complete.");
+                    const statusEl = document.getElementById('gDriveStatus');
+                    if (statusEl) statusEl.textContent = `Last sync: ${new Date().toLocaleTimeString()}`;
                 } else {
                     throw new Error("Upload failed");
                 }
 
             } catch (e) {
                 console.error("Drive Sync Error:", e);
-                showToast("Sync failed. See console.");
+                if (interactive) showToast("Sync failed. See console.");
             }
-        });
+        }
 
         // Helper to reuse import logic
         async function restoreFromData(data) {
@@ -10147,6 +10178,7 @@ async function loadSongsAndPlaylists() {
                 });
         
                 playlists.push(newPlaylist);
+                triggerAutoSync();
                 document.getElementById('newPlaylistName').value = '';
                 closeModal(playlistModal);
                 showToast(`Added item to new playlist "${newName}"`);
@@ -10176,6 +10208,7 @@ async function loadSongsAndPlaylists() {
                 const writeTx = db.transaction('playlists', 'readwrite');
                 writeTx.objectStore('playlists').put(playlist);
                 await writeTx.done;
+                triggerAutoSync();
                 showToast(`Added to "${playlist.name}"`);
             } else {
                 showToast(`Song is already in "${playlist.name}"`);
