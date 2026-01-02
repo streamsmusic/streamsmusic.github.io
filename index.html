@@ -6490,7 +6490,9 @@ async function playSong(song, playContext = null) {
         const isCrossOriginStream = song.storage === 'tidal' && !song.blobUrl;
         
         if (isCrossOriginStream) {
-            audioPlayer.crossOrigin = "anonymous";
+            // FIX: Never enforce CORS on streams. If the CDN doesn't send the header, 
+            // playback fails entirely. Better to play "opaque" (no visualizer) than fail.
+            audioPlayer.removeAttribute('crossorigin');
             disconnectAudioGraph();
         } else {
             audioPlayer.removeAttribute('crossorigin');
@@ -7767,8 +7769,17 @@ async function playtidalTrack(trackId, playContext = null) {
 
         console.log("Track not cached. Resolving stream URL...");
         
-        // iOS Fix: Stream immediately instead of downloading
-        const streamData = await resolveTidalUrl(songObject);
+        // Logic: 
+        // 1. iOS: Always stream (Web Audio is disabled, so opaque streams play fine and load fast).
+        // 2. Stream Only Mode: Always stream.
+        // 3. Desktop/Android: Default to Cache/Download. Streaming opaque audio results in silence 
+        //    due to Web Audio "hijacking" the element. We need a CORS-safe Blob to have sound + visualizer.
+        const shouldStreamDirectly = isIOS || (typeof enableStreamOnly !== 'undefined' && enableStreamOnly);
+
+        let streamData = null;
+        if (shouldStreamDirectly) {
+            streamData = await resolveTidalUrl(songObject);
+        }
         
         if (signal.aborted) return;
 
