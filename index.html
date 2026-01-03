@@ -5587,8 +5587,8 @@ function initVisualizer() {
         
         // Mobile frequencies are often louder in analysis; dampen them
         const sensitivityMultipliers = isMobile ? 
-            [0.75, 0.8, 0.85, 1.0, 1.1, 1.2] : 
-            [1, 1.05, 1.1, 1.15, 1.25, 1.4];
+            [0.8, 1.0, 1.0, 1.0, 1.1, 1.2] : 
+            [1.0, 1.05, 1.1, 1.15, 1.25, 1.4];
 
         // Increase power curve on mobile to prevent constant peaking
         const powerCurve = isMobile ? 2.8 : 2.2;
