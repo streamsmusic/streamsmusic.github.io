@@ -2980,6 +2980,7 @@
         let consecutiveRapidSkips = 0;
         let directoryHandles = []; // For File System Access API
         let isShuffleEnabled = false;
+        let originalQueue = [];
         let repeatMode = 'none'; // 'none', 'all', or 'one'
         let playQueue = [];
         let isQueueUserModified = false;
@@ -6626,10 +6627,15 @@ async function renderDiscoverBrowse() {
             
             const items = json.items || (json.data ? json.data.items : []);
             
-            const tracks = items
+            let tracks = items
                 .filter(entry => entry.item && entry.type === 'track')
-                .map(entry => entry.item)
-                .slice(0, 50);
+                .map(entry => entry.item);
+
+            if (hideExplicitContent) {
+                tracks = tracks.filter(t => !t.explicit);
+            }
+                
+            tracks = tracks.slice(0, 50);
 
             // ** FIX: Store tracks globally so playtidalTrack can find them **
             browseContext = tracks.map(track => ({
@@ -7326,6 +7332,8 @@ async function playSong(song, playContext = null) {
     if (playContext !== null) {
         isRadioMode = false;
         document.body.classList.remove('radio-mode');
+        // Clear shuffle backup on new context
+        originalQueue = [];
     }
 
     if (playContext && Array.isArray(playContext)) {
@@ -9304,24 +9312,32 @@ function toggleShuffle() {
     isShuffleEnabled = !isShuffleEnabled;
     document.getElementById("shuffleBtn").classList.toggle("active", isShuffleEnabled);
 
-    if (playQueue.length <= 1) return; // No need to shuffle if queue is small
+    if (playQueue.length <= 1) return; 
 
     if (isShuffleEnabled) {
-        // When shuffle is turned ON, shuffle the current queue but keep the playing song at the top.
+        // SAVE original order
+        originalQueue = [...playQueue];
+
+        // Shuffle
         const currentSong = playQueue[currentQueueIndex];
         let songsToShuffle = playQueue.filter(song => song.id !== currentSongId);
-        
-        shuffleArray(songsToShuffle); // Use the utility function we added previously
-
-        // Rebuild the queue with the current song first, followed by the shuffled list.
+        shuffleArray(songsToShuffle);
         playQueue = [currentSong, ...songsToShuffle];
-        currentQueueIndex = 0; // The current song is now at the start of the shuffled queue.
-        isQueueUserModified = true; // Shuffling is a user modification of the queue order.
+        currentQueueIndex = 0; 
+        isQueueUserModified = true;
+    } else {
+        // RESTORE original order
+        if (originalQueue.length > 0) {
+            playQueue = [...originalQueue];
+            originalQueue = []; // Clear backup
+            
+            // Find where the current song is in the original order
+            const newIndex = playQueue.findIndex(s => s.id === currentSongId);
+            currentQueueIndex = newIndex !== -1 ? newIndex : 0;
+        }
+        isQueueUserModified = true;
     }
-    // Note: When shuffle is turned OFF, we do not re-sort the queue. It remains in its
-    // current shuffled order until a new song/album is played.
 
-    // Re-render the queue panel if it's open to show the new shuffled order.
     if (isPanelVisible && panelContent === 'queue') {
         renderQueue();
     }
@@ -9926,7 +9942,18 @@ playPauseBtn.addEventListener('click', async () => {
         castController.playPause();
         return;
     }
+
     if (audioPlayer.paused) {
+        // RESUME FIX: If no source is loaded (common on refresh for streamed tracks), trigger full load
+        if ((!audioPlayer.src || audioPlayer.src === '' || audioPlayer.src === window.location.href) && currentlyPlayingSong) {
+            if (currentlyPlayingSong.storage === 'tidal') {
+                await playtidalTrack(currentlyPlayingSong.id);
+            } else {
+                await playSong(currentlyPlayingSong);
+            }
+            return;
+        }
+
         if ('mediaSession' in navigator && navigator.mediaSession.metadata === null) {
             const song = currentlyPlayingSong;
             if (song) {
