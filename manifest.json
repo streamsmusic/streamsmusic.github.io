@@ -5,6 +5,7 @@
   "id": "streamsmusic",
   "start_url": "./index.html",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "minimal-ui"],
   "background_color": "#000000",
   "theme_color": "#000000",
   "scope": "./",
