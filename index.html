@@ -5224,13 +5224,12 @@ function findSongByString(artistTitleString, additionalSongs = []) {
 
             if (isMobile) {
                 // Mobile Configuration: Fewer, larger blobs.
-                blobCount = 3;
-                // Radius will be between 40% and 60% of the smaller canvas dimension to fill the screen.
-                minRadiusMultiplier = 0.4; 
-                radiusVariance = 0.2;
+                blobCount = 8;
+                minRadiusMultiplier = 0.2; 
+                radiusVariance = 0.15;
             } else {
                 // Desktop Configuration: More, smaller blobs.
-                blobCount = 15;
+                blobCount = 16;
                 // Radius will be between 15% and 25% of the smaller canvas dimension.
                 minRadiusMultiplier = 0.15;
                 radiusVariance = 0.1;
@@ -5586,8 +5585,13 @@ function initVisualizer() {
         const mobileBarIndices = [1, 2, 4, 8, 16, 32]; // Mapped to a 128-bin array
         const numBars = 6;
         
-        const sensitivityMultipliers = [1, 1.05, 1.1, 1.15, 1.25, 1.4];
-        const powerCurve = 2.2;
+        // Mobile frequencies are often louder in analysis; dampen them
+        const sensitivityMultipliers = isMobile ? 
+            [0.75, 0.8, 0.85, 1.0, 1.1, 1.2] : 
+            [1, 1.05, 1.1, 1.15, 1.25, 1.4];
+
+        // Increase power curve on mobile to prevent constant peaking
+        const powerCurve = isMobile ? 2.8 : 2.2;
         
         let smoothedPulse = 0.0; 
         const smoothingFactor = 0.2;
