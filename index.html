@@ -5217,33 +5217,44 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             const { width: imgWidth, height: imgHeight } = currentResizedArt;
             const { width: canvasWidth, height: canvasHeight } = distortionCanvas;
             
-            // --- Conditional Parameters for Mobile vs. Desktop ---
             let blobCount;
             let minRadiusMultiplier, radiusVariance;
             const maxSpeed = 0.5;
 
             if (isMobile) {
-                // Mobile Configuration: Fewer, larger blobs.
                 blobCount = 8;
                 minRadiusMultiplier = 0.2; 
                 radiusVariance = 0.15;
             } else {
-                // Desktop Configuration: More, smaller blobs.
-                blobCount = 16;
-                // Radius will be between 15% and 25% of the smaller canvas dimension.
+                blobCount = 15;
                 minRadiusMultiplier = 0.15;
                 radiusVariance = 0.1;
             }
 
-            for (let i = 0; i < blobCount; i++) { // Use the dynamically set blobCount
-                
-                // Use the dynamic multipliers to calculate the radius for the current device.
+            // Create a grid of sectors to ensure source diversity
+            const cols = Math.ceil(Math.sqrt(blobCount));
+            const rows = Math.ceil(blobCount / cols);
+            const sectors = [];
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) sectors.push({ r, c });
+            }
+            // Shuffle sectors
+            for (let i = sectors.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [sectors[i], sectors[j]] = [sectors[j], sectors[i]];
+            }
+
+            const sectorW = imgWidth / cols;
+            const sectorH = imgHeight / rows;
+
+            for (let i = 0; i < blobCount; i++) {
                 const radius = (Math.random() * radiusVariance + minRadiusMultiplier) * Math.min(canvasWidth, canvasHeight);
 
-                // This logic for assigning a unique part of the album art remains the same.
-                const sourceSize = Math.min(imgWidth, imgHeight) * (Math.random() * 0.3 + 0.3);
-                const sourceX = Math.random() * (imgWidth - sourceSize);
-                const sourceY = Math.random() * (imgHeight - sourceSize);
+                // Select a unique area from the shuffled sectors
+                const sector = sectors[i % sectors.length];
+                const sourceSize = Math.min(sectorW, sectorH) * (Math.random() * 0.4 + 0.6);
+                const sourceX = (sector.c * sectorW) + Math.random() * (sectorW - sourceSize);
+                const sourceY = (sector.r * sectorH) + Math.random() * (sectorH - sourceSize);
 
                 blobs.push({
                     x: Math.random() * canvasWidth,
