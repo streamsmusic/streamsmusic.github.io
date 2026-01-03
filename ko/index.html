@@ -4264,7 +4264,35 @@ function resetPlayer() {
 
         async function recoverMissingLocalSong(song) {
             if (!istidalEnabled) return null;
+
+            // 1. Direct ID Strategy (Best)
+            if (song.tidalId || song.cloudId) {
+                const targetId = song.tidalId || song.cloudId;
+                console.log(`Recovery attempt using ID [${targetId}] for ${song.name}`);
+                
+                // Construct a temporary tidal song object
+                const tidalSong = { ...song, id: targetId, storage: 'tidal' };
+                
+                try {
+                    const streamInfo = await resolveTidalUrl(tidalSong);
+                    if (streamInfo && streamInfo.url) {
+                        if (isIOS || castSession) {
+                            if (!castSession && !isDataSaver()) repairLocalFile(tidalSong, song.id);
+                            return streamInfo.url;
+                        }
+                    }
+                    
+                    const cached = await processAndCacheAudio(tidalSong);
+                    if (cached && cached.blob) {
+                        await saveBlobToLocalFile(song.id, cached.blob);
+                        return URL.createObjectURL(cached.blob);
+                    }
+                } catch(e) { 
+                    console.warn("Direct ID recovery failed, falling back to search", e);
+                }
+            }
             
+            // 2. Search Strategy (Fallback)
             const strategies = [
                 song.isrc,
                 `${song.artist} ${song.name}`.replace(/[^\w\s]/gi, '')
@@ -4289,8 +4317,8 @@ function resetPlayer() {
                     const tidalSong = {
                         id: match.id,
                         name: match.title || match.name,
-                        artist: match.artist?.name || match.artist || "알 수 없음",
-                        album: match.album?.title || match.album || "알 수 없음",
+                        artist: match.artist?.name || match.artist || "Unknown",
+                        album: match.album?.title || match.album || "Unknown",
                         storage: 'tidal',
                         isrc: match.isrc
                     };
@@ -8215,7 +8243,8 @@ async function savetidalTrackToLibrary() {
             bpm: songToSave.bpm,
             isrc: songToSave.isrc,
             copyright: songToSave.copyright,
-            explicit: songToSave.explicit
+            explicit: songToSave.explicit,
+            tidalId: songToSave.id
         };
         const songTx = db.transaction(['songs', 'musicFiles'], 'readwrite');
         songTx.objectStore('songs').put(newLocalSong);
@@ -8274,7 +8303,8 @@ async function batchSaveTidalTracks(tracks) {
                 vibrantColor: track.vibrantColor,
                 isrc: track.isrc,
                 copyright: track.copyright,
-                explicit: track.explicit
+                explicit: track.explicit,
+                tidalId: track.id
             };
             
             return { 
