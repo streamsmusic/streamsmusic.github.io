@@ -2972,8 +2972,10 @@
         let currentBeatIntensity = 0; // The smoothly animated intensity used for rendering
         let noise; // This will hold our noise generator function
         let beatIntensity = 0;
-        let preBeatIntensity = 0; // Tracks the anticipation swell before the drop
+        let preBeatIntensity = 0; 
         let isTransitioning = false;
+        let duneCurve = null; // Path for the hidden distortion field
+        let noiseOffset = 0;
         let transitionProgress = 0;
         const TRANSITION_DURATION = 15; // in frames (approx. 0.25 seconds)
         let visualizerFrameId = null;
@@ -5250,6 +5252,14 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             const sectorW = imgWidth / cols;
             const sectorH = imgHeight / rows;
 
+            // Generate the Dune Curve (sand dune pattern across corners)
+            duneCurve = {
+                x1: 0, y1: Math.random() * canvasHeight,
+                cp1x: canvasWidth * 0.3, cp1y: Math.random() * canvasHeight,
+                cp2x: canvasWidth * 0.7, cp2y: Math.random() * canvasHeight,
+                x2: canvasWidth, y2: Math.random() * canvasHeight
+            };
+
             for (let i = 0; i < blobCount; i++) {
                 const radius = (Math.random() * radiusVariance + minRadiusMultiplier) * Math.min(canvasWidth, canvasHeight);
 
@@ -5291,40 +5301,34 @@ function findSongByString(artistTitleString, additionalSongs = []) {
          */
         function drawOrganicBlob(context, blob, imageToDraw, currentBeatIntensity, currentPreBeat) {
             context.save();
-            
-            // Compound Intensity: Subtle swell (pre-beat) + Sharp kick (beat)
-            const combinedIntensity = (currentPreBeat * 0.3) + currentBeatIntensity;
+            const combinedIntensity = (currentPreBeat * 0.4) + currentBeatIntensity;
+            const effectiveScale = 1 + combinedIntensity * 0.08; 
 
-            // 1. Calculate an effective scale for the blob
-            const effectiveScale = 1 + combinedIntensity * 0.06; 
-            // 2. Calculate an effective rotation
-            const effectiveRotation = blob.rotation + combinedIntensity * 0.08; 
+            // Proximity to Dune Field: Distort coordinates as blobs pass through the hidden curve
+            let duneDist = Math.abs(blob.y - (duneCurve.y1 + duneCurve.y2) / 2);
+            let duneForce = Math.max(0, 1 - duneDist / 200) * 20;
 
-            context.translate(blob.x, blob.y);
-            context.rotate(effectiveRotation); // Use the animated rotation
+            context.translate(blob.x, blob.y + (Math.sin(blob.time * 0.1) * duneForce));
+            context.rotate(blob.rotation + combinedIntensity * 0.1); 
             
             context.beginPath();
-            const points = 24; // Slightly more points for smoother liquid edges
-            
-            // Liquid Viscosity: Modulate the "stretchiness" over time
-            const viscosity = 1.2 + Math.sin(blob.time * 0.05) * 0.4;
-            const noiseSpeed = 0.006;
+            const points = 20;
+            const viscosity = 1.5 + Math.sin(blob.time * 0.04) * 0.8;
             
             for (let i = 0; i < points; i++) {
                 const angle = (i / points) * Math.PI * 2;
                 const nx = Math.cos(angle);
                 const ny = Math.sin(angle);
+                const nVal = noise((nx + 1) * viscosity, (ny + 1) * viscosity, blob.time * 0.005);
                 
-                // Sample noise in 3D (X, Y, Time) for organic liquid evolution
-                const noiseVal = noise((nx + 1) * viscosity, (ny + 1) * viscosity, blob.time * noiseSpeed);
-                
-                // Calculate dynamic radius with a "surface tension" floor
-                const radius = blob.radius * effectiveScale * (0.8 + noiseVal * 0.5);
+                // Morpher logic: Pull vertices toward center/outward randomly for non-circularity
+                const morph = 1 + Math.sin(angle * 3 + blob.time * 0.1) * 0.2;
+                const radius = blob.radius * effectiveScale * (0.6 + nVal * 0.8) * morph;
 
-                const pointX = nx * radius;
-                const pointY = ny * radius;
-                if (i === 0) context.moveTo(pointX, pointY);
-                else context.lineTo(pointX, pointY);
+                const px = nx * radius;
+                const py = ny * radius;
+                if (i === 0) context.moveTo(px, py);
+                else context.lineTo(px, py);
             }
             context.closePath();
             context.clip();
@@ -5441,6 +5445,8 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             if (beatIntensity > 0.001) {
                 ctx.restore();
             }
+
+            drawGrain(ctx, canvasWidth, canvasHeight);
         }
         
         /**
@@ -5449,6 +5455,33 @@ function findSongByString(artistTitleString, additionalSongs = []) {
          */
         function triggerBeatEffect() {
             beatIntensity = 1;
+
+            // Dune Property Swap: Find two blobs nearest to the dune horizontal center
+            if (blobs.length > 2) {
+                const sorted = [...blobs].sort((a, b) => {
+                    const distA = Math.abs(a.y - (duneCurve.y1 + duneCurve.y2) / 2);
+                    const distB = Math.abs(b.y - (duneCurve.y1 + duneCurve.y2) / 2);
+                    return distA - distB;
+                });
+                
+                // Swap their source sections
+                const b1 = sorted[0], b2 = sorted[1];
+                [b1.sourceX, b2.sourceX] = [b2.sourceX, b1.sourceX];
+                [b1.sourceY, b2.sourceY] = [b2.sourceY, b1.sourceY];
+            }
+        }
+
+        function drawGrain(context, width, height) {
+            context.save();
+            context.globalCompositeOperation = 'overlay';
+            context.globalAlpha = 0.04;
+            for (let i = 0; i < 5; i++) { // Draw 5 chunks of noise for performance
+                const x = Math.random() * width;
+                const y = Math.random() * height;
+                context.fillStyle = Math.random() > 0.5 ? '#fff' : '#000';
+                context.fillRect(x, y, 2, 2);
+            }
+            context.restore();
         }
         
 async function createResizedImageURL(imageUrl, width, height) {
