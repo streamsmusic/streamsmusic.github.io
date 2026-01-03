@@ -9998,7 +9998,7 @@ playPauseBtn.addEventListener('click', async () => {
     if (!isVisualizerInitialized) initVisualizer();
 
     if (castSession && castPlayer.isConnected) {
-        castController.playPause();
+        castController.playOrPause();
         return;
     }
 
