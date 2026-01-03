@@ -5335,7 +5335,7 @@ function findSongByString(artistTitleString, additionalSongs = []) {
          */
         function animateCanvas() {
             animationFrameId = requestAnimationFrame(animateCanvas);
-            if (!ctx) return;
+            if (!ctx || document.visibilityState !== 'visible') return; // Do not render if screen is off
             
             const { width: canvasWidth, height: canvasHeight } = distortionCanvas;
             
@@ -5561,7 +5561,7 @@ function initVisualizer() {
 
         // 4. Configure the analyser
         if (isMobile) {
-            analyser.fftSize = 64;
+            analyser.fftSize = 256;
         } else {
             analyser.fftSize = 2048;
         }
@@ -5573,17 +5573,17 @@ function initVisualizer() {
         const displacementFilter = document.getElementById('displacement');
         const turbulenceFilter = document.getElementById('turbulence');
 
-        if (!isMobile) {
-            beatDetector = new BeatDetector([[0, 10], [10, 20], [40, 80], [100, 200]]);
-            tempoEstimator = new TempoEstimator();
-        }
+        // Focused bands for real-time analysis (Sub-bass, Bass, Low-Mid)
+        const bands = isMobile ? [[0, 1], [1, 2], [2, 4]] : [[0, 10], [10, 20], [40, 80], [100, 200]];
+        beatDetector = new BeatDetector(bands);
+        tempoEstimator = new TempoEstimator();
         
         const canvas = document.getElementById('visualizerCanvas');
         const canvasCtx = canvas.getContext('2d');
         
         // Define separate bar indices for desktop and mobile to match their FFT sizes.
         const desktopBarIndices = [5, 10, 30, 100, 200, 400];
-        const mobileBarIndices = [1, 3, 6, 12, 20, 28]; // Mapped to a 32-bin array
+        const mobileBarIndices = [1, 2, 4, 8, 16, 32]; // Mapped to a 128-bin array
         const numBars = 6;
         
         const sensitivityMultipliers = [1, 1.05, 1.1, 1.15, 1.25, 1.4];
@@ -5596,7 +5596,7 @@ function initVisualizer() {
             visualizerFrameId = requestAnimationFrame(visualizerDraw);
             analyser.getByteFrequencyData(dataArray);
             
-            if (!isMobile && beatDetector) {
+            if (beatDetector) {
                 const isSpectralBeat = beatDetector.update(dataArray);
                 const currentTime = audioPlayer.currentTime;
                 let effectiveBPM = songBPM;
