@@ -8761,7 +8761,8 @@ async function playtidalTrack(trackId, playContext = null) {
             vibrantColor: vibrantColor,
             peak: trackData.peak || null,
             bpm: trackData.bpm || null,
-            explicit: trackData.explicit || false
+            explicit: trackData.explicit || false,
+            streamUrl: trackData.streamUrl || null
         };
         
         currentlyPlayingSong = songObject;
@@ -9657,6 +9658,25 @@ function setupCastListeners() {
             const scaledPercentage = (percentage / 100) * 90.5;
             if(miniplayerProgress) miniplayerProgress.style.width = `${scaledPercentage}%`;
             updateTimeDisplays(current, duration);
+            
+            // Sync Lyrics
+            syncLyrics(current);
+
+            // Smart Preload for Cast: 20 seconds before end
+            if (duration - current < 20 && playQueue.length > currentQueueIndex + 1) {
+                const nextSong = playQueue[currentQueueIndex + 1];
+                if (nextSong.storage === 'tidal' && !nextSong.streamUrl && !nextSong.isPreloading) {
+                    console.log(`Pre-resolving Cast URL for: ${nextSong.name}`);
+                    nextSong.isPreloading = true;
+                    resolveTidalUrl(nextSong).then(res => {
+                        if (res && res.url) {
+                            nextSong.streamUrl = res.url;
+                            nextSong.audioQuality = res.quality;
+                            console.log("Pre-resolution complete.");
+                        }
+                    }).finally(() => { nextSong.isPreloading = false; });
+                }
+            }
         }
     });
     
@@ -9891,15 +9911,26 @@ async function openContextFromPlayer(type) {
     if (!currentlyPlayingSong) return;
     const s = currentlyPlayingSong;
     
-    // We need to fetch basic info to get IDs if missing (Radio songs flattened metadata)
     if (s.storage === 'tidal') {
-        // Try to derive IDs or search
-        // This is complex because we flattened metadata. 
-        // Simple fallback: Search for the Artist/Album
         const query = type === 'artist' ? s.artist : s.album;
+        const filterType = type === 'artist' ? 'artists' : 'albums'; // 'artists' or 'albums'
+        
         document.getElementById('tidalSearchInput').value = query;
-        setView('tidal'); // Switch to Discover
-        searchtidal(); // Trigger search
+        
+        // Update Filter State
+        tidalFilter = filterType;
+        
+        // Update Filter UI
+        const filterContainer = document.getElementById('tidal-filter-container');
+        if (filterContainer) {
+            filterContainer.querySelectorAll('.filter-btn-sc').forEach(btn => {
+                if (btn.dataset.filter === filterType) btn.classList.add('active');
+                else btn.classList.remove('active');
+            });
+        }
+
+        setView('tidal'); 
+        searchtidal(); 
     }
 }
         
@@ -9951,6 +9982,74 @@ let isUserScrollingLyrics = false;
 let lyricsScrollTimeout = null;
 let isProgrammaticScroll = false;
 
+function syncLyrics(currentTime) {
+    if (!currentlyPlayingSong || !currentlyPlayingSong.lrcData || !isPanelVisible || panelContent !== 'lyrics') return;
+    if (isUserScrollingLyrics) return; 
+
+    const allLyricElements = document.querySelectorAll('#lyrics-scroll-container p');
+    if (allLyricElements.length === 0) return;
+
+    let activeTime = -1;
+    allLyricElements.forEach(el => {
+        const elTime = parseFloat(el.dataset.time);
+        if (!isNaN(elTime) && elTime <= currentTime) {
+            activeTime = elTime;
+        }
+    });
+
+    const activeIndices = [];
+    if (activeTime > -1) {
+        allLyricElements.forEach((el, index) => {
+            if (parseFloat(el.dataset.time) === activeTime) {
+                activeIndices.push(index);
+            }
+        });
+    }
+
+    const referenceIndex = activeIndices.length > 0 ? activeIndices[0] : -1;
+
+    if (referenceIndex !== lastActiveIndex) {
+        const firstActiveIndex = activeIndices.length > 0 ? activeIndices[0] : -1;
+        const lastActiveIndexInGroup = activeIndices.length > 0 ? activeIndices[activeIndices.length - 1] : -1;
+
+        allLyricElements.forEach((el, index) => {
+            const isActive = activeIndices.includes(index);
+            let blur = 0;
+            let opacity = 1;
+
+            if (!isActive) {
+                if (index > lastActiveIndexInGroup) {
+                    const distance = index - lastActiveIndexInGroup;
+                    if (distance >= 5) {
+                        blur = 5; opacity = 0;
+                    } else {
+                        blur = distance * 1.25;
+                        opacity = 1 - (distance * 0.25);
+                    }
+                } else {
+                    const distance = firstActiveIndex - index;
+                    if (distance >= 2) {
+                        blur = 3; opacity = 0;
+                    } else {
+                        blur = 1.5; opacity = 0.5;
+                    }
+                }
+            }
+
+            el.style.filter = `blur(${blur}px)`;
+            el.style.opacity = opacity;
+        });
+
+        const activeElement = allLyricElements[referenceIndex];
+        if (activeElement) {
+            isProgrammaticScroll = true;
+            activeElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setTimeout(() => { isProgrammaticScroll = false; }, 500);
+        }
+        lastActiveIndex = referenceIndex;
+    }
+}
+
 audioPlayer.addEventListener('timeupdate', async () => {
     if (currentSongId) {
         const song = currentlyPlayingSong;
@@ -9974,76 +10073,7 @@ audioPlayer.addEventListener('timeupdate', async () => {
              playNextSong({ isTransition: true });
         }
         
-        if (song && song.lrcData && song.lrcData.lyrics && isPanelVisible && panelContent === 'lyrics') {
-            if (isUserScrollingLyrics) return; // Halt updates while user scrolls
-
-            const currentTime = audioPlayer.currentTime;
-            const allLyricElements = document.querySelectorAll('#lyrics-scroll-container p');
-            if (allLyricElements.length === 0) return;
-
-            // 1. Find the single active timestamp
-            let activeTime = -1;
-            allLyricElements.forEach(el => {
-                const elTime = parseFloat(el.dataset.time);
-                if (!isNaN(elTime) && elTime <= currentTime) {
-                    activeTime = elTime;
-                }
-            });
-
-            // 2. Find all indices that match this active time
-            const activeIndices = [];
-            if (activeTime > -1) {
-                allLyricElements.forEach((el, index) => {
-                    if (parseFloat(el.dataset.time) === activeTime) {
-                        activeIndices.push(index);
-                    }
-                });
-            }
-
-            const referenceIndex = activeIndices.length > 0 ? activeIndices[0] : -1;
-
-            if (referenceIndex !== lastActiveIndex) { // Check for change to prevent redundant updates
-                const firstActiveIndex = activeIndices.length > 0 ? activeIndices[0] : -1;
-                const lastActiveIndexInGroup = activeIndices.length > 0 ? activeIndices[activeIndices.length - 1] : -1;
-
-                allLyricElements.forEach((el, index) => {
-                    const isActive = activeIndices.includes(index);
-                    let blur = 0;
-                    let opacity = 1;
-
-                    if (!isActive) {
-                        if (index > lastActiveIndexInGroup) { // Lines below active group
-                            const distance = index - lastActiveIndexInGroup;
-                            if (distance >= 5) {
-                                blur = 5; opacity = 0;
-                            } else {
-                                blur = distance * 1.25;
-                                opacity = 1 - (distance * 0.25);
-                            }
-                        } else { // Lines above active group
-                            const distance = firstActiveIndex - index;
-                            if (distance >= 2) {
-                                blur = 3; opacity = 0;
-                            } else { // distance is 1
-                                blur = 1.5; opacity = 0.5;
-                            }
-                        }
-                    }
-
-                    el.style.filter = `blur(${blur}px)`;
-                    el.style.opacity = opacity;
-                });
-
-                const activeElement = allLyricElements[referenceIndex];
-                if (activeElement) {
-                    isProgrammaticScroll = true;
-                    activeElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    // After a delay, reset the flag so user scrolls work again
-                    setTimeout(() => { isProgrammaticScroll = false; }, 500);
-                }
-                lastActiveIndex = referenceIndex;
-            }
-        }
+        syncLyrics(audioPlayer.currentTime);
     }
 });
         
