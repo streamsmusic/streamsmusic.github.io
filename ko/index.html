@@ -5127,9 +5127,9 @@ function findSongByString(artistTitleString, additionalSongs = []) {
          * itself will be stretched by CSS to fill the screen.
          */
         function initDistortionCanvas() {
-            // This constant defines our rendering resolution. 0.25 means 25% of the screen size.
+            // This constant defines our rendering resolution. 0.20 means 20% of the screen size.
             // A lower number means better performance but a more pixelated (though blurred) source.
-            const RENDER_SCALE = 0.25;
+            const RENDER_SCALE = 0.20;
 
             distortionCanvas = document.getElementById('distortionCanvas');
             if (!distortionCanvas) {
@@ -5589,8 +5589,8 @@ function initVisualizer() {
         
         // Mobile frequencies are often louder in analysis; dampen them
         const sensitivityMultipliers = isMobile ? 
-            [0.75, 0.8, 0.85, 1.0, 1.1, 1.2] : 
-            [1, 1.05, 1.1, 1.15, 1.25, 1.4];
+            [1.0, 1.0, 1.0, 1.0, 1.1, 1.2] : 
+            [1.0, 1.05, 1.1, 1.15, 1.25, 1.4];
 
         // Increase power curve on mobile to prevent constant peaking
         const powerCurve = isMobile ? 2.8 : 2.2;
