@@ -9548,7 +9548,7 @@ function setupMediaSessionActions() {
 }
 
 window.__onGCastApiAvailable = function(isAvailable) {
-    if (isAvailable) {
+    if (isAvailable && window.cast && window.cast.framework) {
         castPlayer = new cast.framework.RemotePlayer();
         castController = new cast.framework.RemotePlayerController(castPlayer);
 
@@ -9562,6 +9562,7 @@ window.__onGCastApiAvailable = function(isAvailable) {
 };
 
 function setupCastListeners() {
+    if (!window.cast) return;
     const context = cast.framework.CastContext.getInstance();
     
     // 1. Handle Session Lifecycle (Connection)
@@ -9570,9 +9571,14 @@ function setupCastListeners() {
         
         if (e.sessionState === cast.framework.SessionState.SESSION_STARTED) {
             console.log("Cast Session Started");
-            audioPlayer.pause(); // STOP local playback immediately
+            // Force stop local audio and update UI to 'paused' state initially
+            audioPlayer.pause(); 
+            playPauseBtn.classList.remove('playing');
+            playPauseIcon.textContent = 'play_arrow';
+            
             if (currentlyPlayingSong) {
-                loadRemoteMedia(); // Handover current song
+                // Small delay to ensure session is ready for load command
+                setTimeout(() => loadRemoteMedia(), 500); 
             }
         } else if (e.sessionState === cast.framework.SessionState.SESSION_ENDED) {
             console.log("Cast Session Ended");
