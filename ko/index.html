@@ -9563,12 +9563,22 @@ window.__onGCastApiAvailable = function(isAvailable) {
 };
 
 function setupCastListeners() {
+    const context = cast.framework.CastContext.getInstance();
+    
     context.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, (e) => {
-        if (!castSession) return;
+        castSession = e.session;
+        
+        if (!castSession) {
+            // Disconnected
+            return;
+        }
+
         // Sync Play/Pause icon
-        playPauseIcon.textContent = castPlayer.isPaused ? 'play_arrow' : 'pause';
-        playPauseBtn.classList.toggle('playing', !castPlayer.isPaused);
-        updateMiniplayerUI(currentlyPlayingSong, castPlayer.isPaused ? 'paused' : 'playing');
+        if (castPlayer) {
+            playPauseIcon.textContent = castPlayer.isPaused ? 'play_arrow' : 'pause';
+            playPauseBtn.classList.toggle('playing', !castPlayer.isPaused);
+            updateMiniplayerUI(currentlyPlayingSong, castPlayer.isPaused ? 'paused' : 'playing');
+        }
         
         // Sync Progress
         const duration = castPlayer.duration || currentlyPlayingSong?.duration || 0;
@@ -9587,25 +9597,43 @@ async function loadRemoteMedia() {
     const isLocal = currentlyPlayingSong.storage !== 'tidal';
 
     if (isLocal) {
+        // castSession is now correctly set, so recoverMissingLocalSong should try to get a remote URL
         streamUrl = await recoverMissingLocalSong(currentlyPlayingSong);
     } else if (!streamUrl) {
         const resolved = await resolveTidalUrl(currentlyPlayingSong);
         streamUrl = resolved?.url;
     }
     
-    if (!streamUrl) {
+    if (!streamUrl || streamUrl.startsWith('blob:')) {
         showToast("로컬 파일 캐스팅은 지원되지 않습니다.");
         return;
     }
 
-    const mediaInfo = new chrome.cast.media.MediaInfo(streamUrl, 'audio/mp3');
+    // Determine Content Type
+    let contentType = 'audio/mp4'; // Default for Tidal AAC/MP4
+    if (streamUrl.includes('.m3u8')) contentType = 'application/x-mpegurl';
+    else if (streamUrl.includes('.mpd')) contentType = 'application/dash+xml';
+    else if (streamUrl.includes('.mp3')) contentType = 'audio/mp3';
+
+    const mediaInfo = new chrome.cast.media.MediaInfo(streamUrl, contentType);
     mediaInfo.metadata = new chrome.cast.media.MusicTrackMediaMetadata();
     mediaInfo.metadata.title = currentlyPlayingSong.name;
     mediaInfo.metadata.artist = currentlyPlayingSong.artist;
+    mediaInfo.metadata.albumName = currentlyPlayingSong.album;
     mediaInfo.metadata.images = [{ url: currentlyPlayingSong.albumArt }];
 
     const request = new chrome.cast.media.LoadRequest(mediaInfo);
-    castSession.getMediaSession()?.load(request);
+    try {
+        const session = castSession.getMediaSession();
+        if (session) {
+            session.load(request);
+        } else {
+            // If session object is not ready, load via the castSession directly
+            castSession.loadMedia(request);
+        }
+    } catch(e) {
+        console.error("Cast Load Error:", e);
+    }
 }
         
 window.addEventListener("beforeunload", () => {
