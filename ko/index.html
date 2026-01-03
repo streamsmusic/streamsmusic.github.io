@@ -2972,10 +2972,8 @@
         let currentBeatIntensity = 0; // The smoothly animated intensity used for rendering
         let noise; // This will hold our noise generator function
         let beatIntensity = 0;
-        let preBeatIntensity = 0; 
+        let preBeatIntensity = 0; // Tracks the anticipation swell before the drop
         let isTransitioning = false;
-        let duneCurve = null; // Path for the hidden distortion field
-        let noiseOffset = 0;
         let transitionProgress = 0;
         const TRANSITION_DURATION = 15; // in frames (approx. 0.25 seconds)
         let visualizerFrameId = null;
@@ -5252,37 +5250,33 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             const sectorW = imgWidth / cols;
             const sectorH = imgHeight / rows;
 
-            // Generate the Dune Curve (sand dune pattern across corners)
-            duneCurve = {
-                x1: 0, y1: Math.random() * canvasHeight,
-                cp1x: canvasWidth * 0.3, cp1y: Math.random() * canvasHeight,
-                cp2x: canvasWidth * 0.7, cp2y: Math.random() * canvasHeight,
-                x2: canvasWidth, y2: Math.random() * canvasHeight
-            };
-
             for (let i = 0; i < blobCount; i++) {
                 const radius = (Math.random() * radiusVariance + minRadiusMultiplier) * Math.min(canvasWidth, canvasHeight);
 
+                // Select a unique area from the shuffled sectors
                 const sector = sectors[i % sectors.length];
                 const sourceSize = Math.min(sectorW, sectorH) * (Math.random() * 0.4 + 0.6);
-                const sx = (sector.c * sectorW) + Math.random() * (sectorW - sourceSize);
-                const sy = (sector.r * sectorH) + Math.random() * (sectorH - sourceSize);
+                const sourceX = (sector.c * sectorW) + Math.random() * (sectorW - sourceSize);
+                const sourceY = (sector.r * sectorH) + Math.random() * (sectorH - sourceSize);
 
                 blobs.push({
-                    x: Math.random() * canvasWidth, y: Math.random() * canvasHeight,
-                    vx: (Math.random() - 0.5) * maxSpeed, vy: (Math.random() - 0.5) * maxSpeed,
+                    x: Math.random() * canvasWidth,
+                    y: Math.random() * canvasHeight,
+                    vx: (Math.random() - 0.5) * maxSpeed,
+                    vy: (Math.random() - 0.5) * maxSpeed,
                     radius: radius,
                     rotation: Math.random() * Math.PI * 2,
                     rotationSpeed: (Math.random() - 0.5) * 0.002,
-                    sourceX: sx, sourceY: sy,
-                    prevSourceX: sx, prevSourceY: sy,
-                    targetSourceX: sx, targetSourceY: sy,
+                    sourceX: sourceX,
+                    sourceY: sourceY,
                     sourceSize: sourceSize,
                     time: Math.random() * 1000,
-                    swapProgress: 1, // 0 to 1 transition
-                    baseWarp: radius * 0.15,
+                    warpAmount: 0,
+                    baseWarp: radius * 0.12,
                     viscosityOffset: Math.random() * Math.PI,
-                    contrastBoost: Math.random() > 0.6
+                    // Designated blobs react with higher contrast
+                    contrastBoost: Math.random() > 0.6,
+                    scale: 1,
                 });
             }
         }
@@ -5297,39 +5291,43 @@ function findSongByString(artistTitleString, additionalSongs = []) {
          */
         function drawOrganicBlob(context, blob, imageToDraw, currentBeatIntensity, currentPreBeat) {
             context.save();
-            const combinedIntensity = (currentPreBeat * 0.4) + currentBeatIntensity;
-            const effectiveScale = 1 + combinedIntensity * 0.12; 
+            
+            // Compound Intensity: Subtle swell (pre-beat) + Sharp kick (beat)
+            const combinedIntensity = (currentPreBeat * 0.3) + currentBeatIntensity;
+
+            // 1. Calculate an effective scale for the blob
+            const effectiveScale = 1 + combinedIntensity * 0.06; 
+            // 2. Calculate an effective rotation
+            const effectiveRotation = blob.rotation + combinedIntensity * 0.08; 
 
             context.translate(blob.x, blob.y);
-            context.rotate(blob.rotation); 
+            context.rotate(effectiveRotation); // Use the animated rotation
             
             context.beginPath();
-            const points = 32; // Higher vertex count for fluid detail
-            const viscosity = 0.8 + Math.sin(blob.time * 0.03) * 0.4;
+            const points = 24; // Slightly more points for smoother liquid edges
+            
+            // Liquid Viscosity: Modulate the "stretchiness" over time
+            const viscosity = 1.2 + Math.sin(blob.time * 0.05) * 0.4;
+            const noiseSpeed = 0.006;
             
             for (let i = 0; i < points; i++) {
                 const angle = (i / points) * Math.PI * 2;
-                const vx = Math.cos(angle), vy = Math.sin(angle);
+                const nx = Math.cos(angle);
+                const ny = Math.sin(angle);
                 
-                // Double-layered noise for complex organic warping
-                const n1 = noise((vx + 1) * viscosity, (vy + 1) * viscosity, blob.time * 0.004);
-                const n2 = noise(vx * 2, vy * 2, blob.time * 0.01);
+                // Sample noise in 3D (X, Y, Time) for organic liquid evolution
+                const noiseVal = noise((nx + 1) * viscosity, (ny + 1) * viscosity, blob.time * noiseSpeed);
                 
-                // Stretch logic: Warp radius significantly in random directions
-                const stretch = 1 + n2 * 0.6;
-                const radius = blob.radius * effectiveScale * (0.5 + n1 * 1.2) * stretch;
+                // Calculate dynamic radius with a "surface tension" floor
+                const radius = blob.radius * effectiveScale * (0.8 + noiseVal * 0.5);
 
-                const px = vx * radius, py = vy * radius;
-                if (i === 0) context.moveTo(px, py);
-                else context.lineTo(px, py);
+                const pointX = nx * radius;
+                const pointY = ny * radius;
+                if (i === 0) context.moveTo(pointX, pointY);
+                else context.lineTo(pointX, pointY);
             }
             context.closePath();
             context.clip();
-
-            // Smooth Color Interpolation
-            if (blob.swapProgress < 1) blob.swapProgress += 0.02;
-            const curX = blob.prevSourceX + (blob.targetSourceX - blob.prevSourceX) * blob.swapProgress;
-            const curY = blob.prevSourceY + (blob.targetSourceY - blob.prevSourceY) * blob.swapProgress;
             
             // Refined Liquid Slicing: Vertical strips with organic horizontal drift
             const totalWarp = blob.baseWarp + Math.sin(blob.time * 0.08) * (blob.baseWarp * 0.6);
@@ -5337,11 +5335,11 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             const stripWidth = (blob.radius * 2.5 * effectiveScale) / numStrips;
             
             for (let i = 0; i < numStrips; i++) {
-                const stripX = -blob.radius * 1.5 * effectiveScale + i * stripWidth;
+                const stripX = -blob.radius * effectiveScale + i * stripWidth;
                 const sinInput = (i / numStrips) * Math.PI + (blob.time * 0.12);
                 const yOffset = Math.sin(sinInput) * totalWarp;
-
-                const srcX = curX + (blob.sourceSize / numStrips) * i;
+                
+                const srcX = blob.sourceX + (blob.sourceSize / numStrips) * i;
                 const srcW = blob.sourceSize / numStrips;
                 const destY = -blob.radius * effectiveScale + yOffset;
                 const destH = blob.radius * 2 * effectiveScale;
@@ -5443,8 +5441,6 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             if (beatIntensity > 0.001) {
                 ctx.restore();
             }
-
-            drawGrain(ctx, canvasWidth, canvasHeight);
         }
         
         /**
@@ -5453,40 +5449,6 @@ function findSongByString(artistTitleString, additionalSongs = []) {
          */
         function triggerBeatEffect() {
             beatIntensity = 1;
-
-            // Proximity Swap Logic: Find two blobs that are very close to each other
-            for (let i = 0; i < blobs.length; i++) {
-                for (let j = i + 1; j < blobs.length; j++) {
-                    const b1 = blobs[i], b2 = blobs[j];
-                    const dist = Math.hypot(b1.x - b2.x, b1.y - b2.y);
-                    
-                    // Only swap if they are touching/merged and not currently transitioning
-                    if (dist < (b1.radius + b2.radius) * 0.7 && b1.swapProgress >= 1 && b2.swapProgress >= 1) {
-                        // Exchange Targets
-                        b1.prevSourceX = b1.targetSourceX; b1.prevSourceY = b1.targetSourceY;
-                        b2.prevSourceX = b2.targetSourceX; b2.prevSourceY = b2.targetSourceY;
-                        
-                        b1.targetSourceX = b2.prevSourceX; b1.targetSourceY = b2.prevSourceY;
-                        b2.targetSourceX = b1.prevSourceX; b2.targetSourceY = b1.prevSourceY;
-                        
-                        b1.swapProgress = 0; b2.swapProgress = 0;
-                        return; // Only one swap per beat to maintain performance
-                    }
-                }
-            }
-        }
-
-        function drawGrain(context, width, height) {
-            context.save();
-            context.globalCompositeOperation = 'overlay';
-            context.globalAlpha = 0.04;
-            for (let i = 0; i < 5; i++) { // Draw 5 chunks of noise for performance
-                const x = Math.random() * width;
-                const y = Math.random() * height;
-                context.fillStyle = Math.random() > 0.5 ? '#fff' : '#000';
-                context.fillRect(x, y, 2, 2);
-            }
-            context.restore();
         }
         
 async function createResizedImageURL(imageUrl, width, height) {
