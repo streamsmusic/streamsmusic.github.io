@@ -7361,16 +7361,35 @@ async function playSong(song, playContext = null) {
         currentlyPlayingSong = song;
         setupBpm(song);
         
-        // This await is the critical part. If we pause() before this, iOS kills the background task.
+        // Update State FIRST
+        currentSongId = song.id;
+        sessionPlayedIds.add(song.id);
+        currentQueueIndex = playQueue.findIndex(s => s.id === currentSongId);
+
+        if (isPanelVisible) {
+            if (panelContent === 'lyrics') {
+                renderLyrics();
+            } else if (panelContent === 'queue') {
+                renderQueue();
+                scrollToCurrentSongInQueue();
+            }
+        }
+
+        // --- Cast Handling ---
+        if (castSession && castPlayer.isConnected) {
+            updatePlayerUI(song);
+            loadRemoteMedia(); // Hand off to Cast
+            isPlayerLoading = false;
+            return;
+        }
+
+        // --- Local Playback Logic ---
         let fileUrl = song.blobUrl || song.streamUrl || await getSongFileUrl(song);
         
         if (!fileUrl) {
-            // Self-healing: If local file is missing, try to stream from cloud and restore it
             if (song.storage !== 'tidal') {
                  fileUrl = await recoverMissingLocalSong(song);
-                 if (fileUrl) {
-                     showToast(`"${song.name}"을(를) 클라우드에서 복구했습니다`);
-                 }
+                 if (fileUrl) showToast(`Recovered "${song.name}" from cloud`);
             }
         }
 
@@ -7378,9 +7397,6 @@ async function playSong(song, playContext = null) {
             throw new Error(`Could not get a playable URL for ${song.name}`);
         }
 
-        // --- Synchronous Audio Setup ---
-        // Now that we have the URL, we swap sources immediately
-        
         if (audioPlayer.src && audioPlayer.src.startsWith('blob:')) {
             URL.revokeObjectURL(audioPlayer.src);
         }
@@ -7397,10 +7413,7 @@ async function playSong(song, playContext = null) {
             audioPlayer.removeAttribute('crossorigin');
             connectAudioGraph();
         } else if (song.storage === 'tidal' || song.storage === 'filesystem') {
-            // If we are streaming a direct URL and NOT on iOS, we disconnect the 
-            // audio graph to prevent "silence" due to CORS restrictions.
             if (!isIOS && !castSession) {
-                console.warn("Direct stream detected: Disconnecting visualizer to bypass CORS silencing.");
                 disconnectAudioGraph();
             }
             audioPlayer.removeAttribute('crossorigin');
@@ -7409,53 +7422,31 @@ async function playSong(song, playContext = null) {
             connectAudioGraph();
         }
 
-        if (castSession && castPlayer.isConnected) {
-            // Update UI immediately for responsiveness
-            updatePlayerUI(song);
-            // Hand off to Cast
-            loadRemoteMedia();
-            isPlayerLoading = false;
-            return;
-        } else {
-            if (isHlsStream) {
-                if (typeof Hls !== 'undefined' && Hls.isSupported()) {
-                    hls = new Hls();
-                    hls.on(Hls.Events.ERROR, function (event, data) {
-                        if (data.fatal) {
-                            console.error('Fatal HLS Error:', data);
-                            isPlayerLoading = false;
-                            playNextSong({ userInitiated: false });
-                        }
-                    });
-                    hls.loadSource(fileUrl);
-                    hls.attachMedia(audioPlayer);
-                } else if (audioPlayer.canPlayType('application/vnd.apple.mpegurl')) {
-                    audioPlayer.src = fileUrl;
-                }
-            } else {
+        if (isHlsStream) {
+            if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+                hls = new Hls();
+                hls.on(Hls.Events.ERROR, function (event, data) {
+                    if (data.fatal) {
+                        console.error('Fatal HLS Error:', data);
+                        isPlayerLoading = false;
+                        playNextSong({ userInitiated: false });
+                    }
+                });
+                hls.loadSource(fileUrl);
+                hls.attachMedia(audioPlayer);
+            } else if (audioPlayer.canPlayType('application/vnd.apple.mpegurl')) {
                 audioPlayer.src = fileUrl;
-                audioPlayer.load();
             }
+        } else {
+            audioPlayer.src = fileUrl;
+            audioPlayer.load();
         }
-
-        currentSongId = song.id;
-        sessionPlayedIds.add(song.id);
-        currentQueueIndex = playQueue.findIndex(s => s.id === currentSongId);
 
         let base64Artwork = song.albumArt;
         try {
             base64Artwork = await imageUrlToBase64(song.albumArt);
         } catch (e) {
             console.warn("Artwork conversion failed", e);
-        }
-
-        if (isPanelVisible) {
-            if (panelContent === 'lyrics') {
-                renderLyrics();
-            } else if (panelContent === 'queue') {
-                renderQueue();
-                scrollToCurrentSongInQueue();
-            }
         }
 
         await new Promise((resolve, reject) => {
@@ -9589,13 +9580,35 @@ function setupCastListeners() {
         }
     });
 
-    // 2. Handle Player State (Play/Pause/Buffering)
-    castController.addEventListener(cast.framework.RemotePlayerEventType.IS_PAUSED_CHANGED, () => {
-        const isPaused = castPlayer.isPaused;
-        playPauseIcon.textContent = isPaused ? 'play_arrow' : 'pause';
-        playPauseBtn.classList.toggle('playing', !isPaused);
-        updateMiniplayerUI(currentlyPlayingSong, isPaused ? 'paused' : 'playing');
-        updateMediaSessionPlaybackState(isPaused ? 'paused' : 'playing');
+    // 2. Handle Player State (Play/Pause/Buffering/Idle)
+    castController.addEventListener(cast.framework.RemotePlayerEventType.PLAYER_STATE_CHANGED, (e) => {
+        const state = e.value;
+        const nowPlayingView = document.getElementById('now-playing-view');
+
+        if (state === chrome.cast.media.PlayerState.PLAYING) {
+            setPlayerLoadingState(false);
+            if(nowPlayingView) nowPlayingView.classList.remove('paused');
+            playPauseIcon.textContent = 'pause';
+            playPauseBtn.classList.add('playing');
+            updateMiniplayerUI(currentlyPlayingSong, 'playing');
+        } else if (state === chrome.cast.media.PlayerState.PAUSED) {
+            setPlayerLoadingState(false);
+            if(nowPlayingView) nowPlayingView.classList.add('paused');
+            playPauseIcon.textContent = 'play_arrow';
+            playPauseBtn.classList.remove('playing');
+            updateMiniplayerUI(currentlyPlayingSong, 'paused');
+        } else if (state === chrome.cast.media.PlayerState.BUFFERING) {
+            setPlayerLoadingState(true, currentlyPlayingSong);
+        } else if (state === chrome.cast.media.PlayerState.IDLE) {
+            // Check if track finished to play next
+            if (castSession) {
+                const mediaSession = castSession.getMediaSession();
+                if (mediaSession && mediaSession.idleReason === chrome.cast.media.IdleReason.FINISHED) {
+                    console.log("Cast media finished, playing next...");
+                    playNextSong();
+                }
+            }
+        }
     });
 
     // 3. Handle Progress/Time Updates
@@ -10089,6 +10102,7 @@ document.addEventListener("touchend", () => { isDragging = false; });
 document.addEventListener("touchmove", e => handleProgressDrag(e), { passive: true });
 
 audioPlayer.addEventListener('pause', () => {
+    if (castSession) return; // Ignore local pause events while casting
     const nowPlayingView = document.getElementById('now-playing-view');
     if(nowPlayingView) nowPlayingView.classList.add('paused');
     
@@ -10099,6 +10113,7 @@ audioPlayer.addEventListener('pause', () => {
 });
 
 audioPlayer.addEventListener('play', () => {
+    if (castSession) return; // Ignore local play events while casting
     const nowPlayingView = document.getElementById('now-playing-view');
     if(nowPlayingView) nowPlayingView.classList.remove('paused');
 
