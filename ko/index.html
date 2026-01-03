@@ -3083,6 +3083,13 @@
             return new Promise(resolve => resolve(window.confirm(message)));
         }
 
+        async function requestQueueReplaceConfirmation() {
+            if (playQueue.length > 0 && isQueueUserModified) {
+                return await showConfirmDialog("현재 큐를 덮어쓰시겠습니까? 수동으로 편집한 목록이 사라집니다.");
+            }
+            return true;
+        }
+
         function toggleQueueLoading(show) {
             const container = document.querySelector('.queue-list-container');
             // If queue panel isn't rendered yet but we are loading, we might need to render the empty shell first
@@ -6641,10 +6648,10 @@ async function renderDiscoverBrowse() {
             trendingGrid.innerHTML = tracks.map(track => {
                 const cover = track.album ? track.album.cover : null;
                 return `
-                <div class="item-card" onclick="playtidalTrack(${track.id})">
+                <div class="item-card" data-track-id="${track.id}">
                     <img src="${getHighResArtwork(cover)}" class="item-card-art">
                     <div class="item-card-info">
-                        <div class="item-card-title">${sanitize(track.title)}</div>
+                        <div class="item-card-title">${sanitize(track.title)}${getExplicitBadge(track.explicit)}</div>
                         <div class="item-card-subtitle">${sanitize(track.artist.name)}</div>
                     </div>
                 </div>
@@ -10039,12 +10046,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             }, 300);
         });
 
-        document.getElementById('search-results-grid').addEventListener('click', (e) => {
+        document.getElementById('search-results-grid').addEventListener('click', async (e) => {
             const songItem = e.target.closest('.music-item[data-id]');
             if (songItem) {
                 const songId = parseFloat(songItem.dataset.id);
                 const song = songs.find(s => s.id === songId);
                 if (song) {
+                    if (!await requestQueueReplaceConfirmation()) return;
+
                     // Get context from the search results
                     const contextSongs = Array.from(document.querySelectorAll('#search-results-grid .music-item[data-id]'))
                         .map(item => songs.find(s => s.id === parseFloat(item.dataset.id)))
@@ -10063,7 +10072,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     
         
-        document.getElementById('home-view').addEventListener('click', (e) => {
+        document.getElementById('home-view').addEventListener('click', async (e) => {
             const highlightCard = e.target.closest('.highlight-card[data-id]');
             const albumCard = e.target.closest('.item-card[data-album-id]');
     
@@ -10071,6 +10080,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const songId = parseFloat(highlightCard.dataset.id);
                 const song = songs.find(s => s.id === songId);
                 if (song) {
+                    if (!await requestQueueReplaceConfirmation()) return;
                     // Play this single song as its own context
                     playSong(song, [song]);
                 }
@@ -10080,6 +10090,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // When playing from a "Recently Played" album card, play the first song of that album
                 const songToPlay = songs.find(s => s.albumArtist === artist && s.album === albumName);
                 if(songToPlay) {
+                    if (!await requestQueueReplaceConfirmation()) return;
                     // The context is all songs from that album
                     const albumContext = songs.filter(s => s.albumArtist === artist && s.album === albumName);
                     playSong(songToPlay, albumContext);
@@ -10087,7 +10098,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
-        libraryGrid.addEventListener('click', (e) => {
+        libraryGrid.addEventListener('click', async (e) => {
             const songItem = e.target.closest('.music-item[data-id]');
             const albumCard = e.target.closest('.item-card[data-album-id]');
             const artistCard = e.target.closest('.item-card[data-artist-name]');
@@ -10097,6 +10108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const songId = parseFloat(songItem.dataset.id);
                 const song = songs.find(s => s.id === songId);
                 if (song) {
+                    if (!await requestQueueReplaceConfirmation()) return;
                     // Get the context from the currently displayed list
                     const contextSongs = Array.from(libraryGrid.querySelectorAll('.music-item[data-id]'))
                         .map(item => songs.find(s => s.id === parseFloat(item.dataset.id)))
@@ -10148,11 +10160,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
-        drawerContent.addEventListener('click', (e) => {
+        drawerContent.addEventListener('click', async (e) => {
             const localSongItem = e.target.closest('.music-item[data-id]');
             const tidalSongItem = e.target.closest('.music-item[data-track-id]');
             const albumCard = e.target.closest('.item-card[data-album-id]');
-            const backButton = e.target.closest('.drawer-back-btn'); // Correctly find the button
+            const backButton = e.target.closest('.drawer-back-btn'); 
 
             if (backButton) {
                 const artistName = backButton.dataset.artistName;
@@ -10167,12 +10179,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                         </div>
                     </div>`;
                 }).join('')}</div>`;
-                openDrawer(sanitize(artistName), `${artistAlbums.length} 앨범`, contentHtml);
+                openDrawer(sanitize(artistName), `${artistAlbums.length} albums`, contentHtml);
             } else if (localSongItem) {
-                // Logic for playing a local song from the library
                 const songId = parseFloat(localSongItem.dataset.id);
                 const song = songs.find(s => s.id === songId);
                 if (song) {
+                    if (!await requestQueueReplaceConfirmation()) return;
                     const contextSongs = Array.from(drawerContent.querySelectorAll('.music-item[data-id]'))
                         .map(item => songs.find(s => s.id === parseFloat(item.dataset.id)))
                         .filter(Boolean);
@@ -10184,16 +10196,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const albumName = albumCard.dataset.albumName;
                 const artistName = albumCard.dataset.albumArtistName;
 
-                // Check if the albumId is a number (TIDAL) or a string (Local)
                 if (!isNaN(parseFloat(albumId)) && isFinite(albumId)) {
-                    // It's a numerical ID, so it's a TIDAL album.
                     openAlbumView(albumId, albumName, artistName);
                 } else {
-                    // It's a string like "Artist::Album", so it's a LOCAL album.
                     const [localArtist, localAlbum] = albumId.split('::');
                     openLocalAlbumView(localArtist, localAlbum);
                 }
             } else if (tidalSongItem) {
+                if (!await requestQueueReplaceConfirmation()) return;
                 const trackId = tidalSongItem.dataset.trackId;
                 const playContext = currentDrawerContext.map(track => ({
                     id: track.id,
@@ -10631,7 +10641,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             tidalSearchTimeout = setTimeout(searchtidal, 300);
         });
         
-        document.getElementById('tidal-results-grid').addEventListener('click', e => {
+        document.getElementById('tidal-results-grid').addEventListener('click', async (e) => {
             if (e.target && e.target.id === 'loadMoreBtn') {
                 e.target.innerHTML = 'Loading...';
                 e.target.disabled = true;
@@ -10646,6 +10656,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const playlistCard = e.target.closest('.item-card[data-playlist-id]');
         
             if (trackCard) {
+                if (!await requestQueueReplaceConfirmation()) return;
                 const playContext = lasttidalSearchResults.map(track => ({
                     id: track.id,
                     name: track.title,
@@ -10656,6 +10667,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }));
                 playtidalTrack(trackCard.dataset.trackId, playContext);
             } else if (cachedCard) {
+                if (!await requestQueueReplaceConfirmation()) return;
                 const trackId = parseFloat(cachedCard.dataset.cachedId);
                 const contextNodes = document.querySelectorAll('#tidal-results-grid .music-item[data-cached-id]');
                 const playContext = Array.from(contextNodes).map(node => {
@@ -10683,6 +10695,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                 openPlaylistView(playlistId, playlistTitle);
             }
         });
+
+        // Trending Grid Listener
+        const trendingGrid = document.getElementById('tidal-trending-grid');
+        if (trendingGrid) {
+            trendingGrid.addEventListener('click', async (e) => {
+                const trackCard = e.target.closest('.item-card[data-track-id]');
+                if (trackCard) {
+                    if (!await requestQueueReplaceConfirmation()) return;
+                    const trackId = trackCard.dataset.trackId;
+                    const playContext = browseContext.map(t => ({...t}));
+                    playtidalTrack(trackId, playContext);
+                }
+            });
+        }
 
         // Global Context Menu Listener
         document.addEventListener('contextmenu', e => {
