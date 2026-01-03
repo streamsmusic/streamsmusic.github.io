@@ -3856,7 +3856,8 @@ async function appendRadioTracks() {
                 storage: 'tidal',
                 duration: track.duration,
                 audioQuality: track.audioQuality,
-                vibrantColor: safeColor
+                vibrantColor: safeColor,
+                explicit: track.explicit || false
             };
         });
         
@@ -7023,7 +7024,8 @@ async function generateAutoplaySongs() {
             storage: 'tidal',
             duration: track.duration,
             audioQuality: track.audioQuality,
-            vibrantColor: track.album ? track.album.vibrantColor : null
+            vibrantColor: track.album ? track.album.vibrantColor : null,
+            explicit: track.explicit || false
         })).filter(t => t.id && !currentQueueIds.has(t.id)); // Filter invalid or current queue
 
         // Split Fresh vs Repeats
@@ -7205,6 +7207,8 @@ async function getTracksForContext(type, id, metadata) {
                 name: t.title,
                 artist: t.artist.name,
                 album: t.album.title,
+                albumArtist: t.album?.artist?.name || t.artist.name,
+                year: (t.streamStartDate || t.album?.releaseDate || "").split('-')[0],
                 albumArt: getHighResArtwork(t.album.cover),
                 storage: 'tidal',
                 duration: t.duration,
