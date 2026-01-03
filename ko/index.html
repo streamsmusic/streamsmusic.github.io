@@ -7786,15 +7786,18 @@ function toggletidalTab() {
                 if (!response.ok) throw new Error(`API request failed: ${response.statusText}`);
                 
                 const responseData = await response.json();
-                let data = responseData.data || {};
-                
-                if (tidalFilter === 'artists' && data.artists) data = data.artists;
-                else if (tidalFilter === 'albums' && data.albums) data = data.albums;
-                else if (tidalFilter === 'playlists' && data.playlists) data = data.playlists;
-                else if (tidalFilter === 'tracks' && data.tracks) data = data.tracks;
+                const responseBody = responseData.data || {};
+                let dataBucket = responseBody;
 
-                const totalItems = data.totalNumberOfItems || 0;
-                const rawItems = (data.items || []).filter(item => !hideExplicitContent || !item.explicit);
+                // Handle inconsistent data wrapping per documentation
+                if (tidalFilter === 'artists') dataBucket = responseBody.artists;
+                else if (tidalFilter === 'albums') dataBucket = responseBody.albums;
+                else if (tidalFilter === 'playlists') dataBucket = responseBody.playlists;
+
+                if (!dataBucket) throw new Error("Missing data in API response");
+
+                const totalItems = dataBucket.totalNumberOfItems || 0;
+                const rawItems = (dataBucket.items || []).filter(item => !hideExplicitContent || !item.explicit);
                 let newItems = [];
                 
                 switch (tidalFilter) {
@@ -7974,15 +7977,18 @@ async function openArtistView(artistId, artistName) {
         const response = await fetchHifi(`/artist/?f=${artistId}`);
         if (!response.ok) throw new Error('Failed to fetch artist content');
         
-        const data = await response.json();
+        const responseData = await response.json();
+        const data = responseData.data || responseData; // Support older versions/wrappers if needed
     
-        // Extract top tracks from the 'tracks' property
-        const topTracks = data.tracks || [];
+        const topTracks = (data.tracks || []).filter(t => !hideExplicitContent || !t.explicit);
         
-        // Extract albums from the new, deeply nested structure
+        // Drilling documented artist album structure
         let albums = [];
-        if (data.albums && data.albums.rows && data.albums.rows.length > 0 && data.albums.rows[0].modules && data.albums.rows[0].modules.length > 0 && data.albums.rows[0].modules[0].pagedList) {
-            albums = data.albums.rows[0].modules[0].pagedList.items || [];
+        if (data.albums && Array.isArray(data.albums.items)) {
+            albums = data.albums.items;
+        } else if (data.albums && data.albums.rows) {
+            // fallback for potential row-based layout in nested results
+            albums = data.albums.rows.flatMap(r => r.modules.filter(m => m.pagedList).flatMap(m => m.pagedList.items));
         }
 
         if (topTracks.length === 0 && albums.length === 0) {
@@ -8480,12 +8486,20 @@ async function processAndCacheAudio(songObject, signal = null) {
                     const responseData = await response.json();
                     const data = responseData.data || {};
 
-                    if (data.peak) songObject.peak = data.peak;
-                    if (data.bpm) songObject.bpm = data.bpm;
+                    // Map documented gain/peak fields
+                    if (data.trackPeakAmplitude) songObject.peak = data.trackPeakAmplitude;
+                    if (data.trackReplayGain) songObject.replayGain = data.trackReplayGain;
 
                     if (data.manifest) {
-                        const decodedManifest = JSON.parse(atob(data.manifest));
-                        if (decodedManifest.urls && decodedManifest.urls[0]) {
+                        let decodedManifest;
+                        if (data.manifestMimeType === 'application/vnd.tidal.bts') {
+                            decodedManifest = JSON.parse(atob(data.manifest));
+                        } else if (data.manifestMimeType === 'application/dash+xml') {
+                            // Handled in Stage 2 fallback for clarity or complex DASH
+                            continue; 
+                        }
+
+                        if (decodedManifest && decodedManifest.urls && decodedManifest.urls[0]) {
                             const audioUrl = decodedManifest.urls[0];
                             console.log(`Found direct URL via /track manifest for quality: ${quality}`);
                             
