@@ -7409,8 +7409,10 @@ async function playSong(song, playContext = null) {
             connectAudioGraph();
         }
 
-        if (castSession) {
+        if (castSession && castPlayer.isConnected) {
+            // Update UI immediately for responsiveness
             updatePlayerUI(song);
+            // Hand off to Cast
             loadRemoteMedia();
             isPlayerLoading = false;
             return;
@@ -9565,27 +9567,48 @@ window.__onGCastApiAvailable = function(isAvailable) {
 function setupCastListeners() {
     const context = cast.framework.CastContext.getInstance();
     
+    // 1. Handle Session Lifecycle (Connection)
     context.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, (e) => {
         castSession = e.session;
         
-        if (!castSession) {
-            // Disconnected
-            return;
+        if (e.sessionState === cast.framework.SessionState.SESSION_STARTED) {
+            console.log("Cast Session Started");
+            audioPlayer.pause(); // STOP local playback immediately
+            if (currentlyPlayingSong) {
+                loadRemoteMedia(); // Handover current song
+            }
+        } else if (e.sessionState === cast.framework.SessionState.SESSION_ENDED) {
+            console.log("Cast Session Ended");
+            castSession = null;
         }
+    });
 
-        // Sync Play/Pause icon
-        if (castPlayer) {
-            playPauseIcon.textContent = castPlayer.isPaused ? 'play_arrow' : 'pause';
-            playPauseBtn.classList.toggle('playing', !castPlayer.isPaused);
-            updateMiniplayerUI(currentlyPlayingSong, castPlayer.isPaused ? 'paused' : 'playing');
-        }
-        
-        // Sync Progress
-        const duration = castPlayer.duration || currentlyPlayingSong?.duration || 0;
+    // 2. Handle Player State (Play/Pause/Buffering)
+    castController.addEventListener(cast.framework.RemotePlayerEventType.IS_PAUSED_CHANGED, () => {
+        const isPaused = castPlayer.isPaused;
+        playPauseIcon.textContent = isPaused ? 'play_arrow' : 'pause';
+        playPauseBtn.classList.toggle('playing', !isPaused);
+        updateMiniplayerUI(currentlyPlayingSong, isPaused ? 'paused' : 'playing');
+        updateMediaSessionPlaybackState(isPaused ? 'paused' : 'playing');
+    });
+
+    // 3. Handle Progress/Time Updates
+    castController.addEventListener(cast.framework.RemotePlayerEventType.CURRENT_TIME_CHANGED, () => {
+        const current = castPlayer.currentTime;
+        const duration = castPlayer.duration;
         if (duration > 0) {
-            const percent = (castPlayer.currentTime / duration) * 100;
-            progress.style.width = `${percent}%`;
-            updateTimeDisplays(castPlayer.currentTime, duration);
+            const percentage = (current / duration) * 100;
+            progress.style.width = `${percentage}%`;
+            const scaledPercentage = (percentage / 100) * 90.5;
+            if(miniplayerProgress) miniplayerProgress.style.width = `${scaledPercentage}%`;
+            updateTimeDisplays(current, duration);
+        }
+    });
+    
+    // 4. Handle Connection State
+    castController.addEventListener(cast.framework.RemotePlayerEventType.IS_CONNECTED_CHANGED, (e) => {
+        if (e.value) { // Connected
+            audioPlayer.pause();
         }
     });
 }
@@ -9622,17 +9645,22 @@ async function loadRemoteMedia() {
     mediaInfo.metadata.albumName = currentlyPlayingSong.album;
     mediaInfo.metadata.images = [{ url: currentlyPlayingSong.albumArt }];
 
+    // Explicitly pause local player to prevent double audio
+    audioPlayer.pause();
+
     const request = new chrome.cast.media.LoadRequest(mediaInfo);
+    request.autoplay = true;
+
     try {
-        const session = castSession.getMediaSession();
-        if (session) {
-            session.load(request);
-        } else {
-            // If session object is not ready, load via the castSession directly
-            castSession.loadMedia(request);
-        }
+        // castSession.loadMedia returns a Promise and is the correct way to initiate playback
+        castSession.loadMedia(request).then(() => {
+            console.log('Remote media loaded successfully');
+        }).catch((errorCode) => {
+            console.error('Remote media load failed code: ' + errorCode);
+            showToast("Cast failed to load media");
+        });
     } catch(e) {
-        console.error("Cast Load Error:", e);
+        console.error("Cast Load Exception:", e);
     }
 }
         
@@ -9969,7 +9997,7 @@ playPauseBtn.addEventListener('click', async () => {
 
     if (!isVisualizerInitialized) initVisualizer();
 
-    if (castSession) {
+    if (castSession && castPlayer.isConnected) {
         castController.playPause();
         return;
     }
