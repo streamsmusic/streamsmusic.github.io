@@ -9601,14 +9601,19 @@ function setupCastListeners() {
             playPauseIcon.textContent = 'play_arrow';
 
             // Attach Direct Media Listener for reliable End-of-Stream detection
-            if (castSession) {
-                castSession.addMediaListener((mediaSession) => {
-                    const state = mediaSession.playerState;
-                    const reason = mediaSession.idleReason;
-                    if (state === chrome.cast.media.PlayerState.IDLE && reason === chrome.cast.media.IdleReason.FINISHED) {
-                        console.log("Cast Media Finished (Listener). Playing next...");
-                        playNextSong({ userInitiated: false });
-                    }
+            const sessionObj = castSession.getSessionObj();
+            if (sessionObj) {
+                sessionObj.addMediaListener((mediaSession) => {
+                    // When media loads, attach an update listener to catch the 'FINISHED' state
+                    // This bypasses the RemotePlayerController which can be slow or filtered
+                    mediaSession.addUpdateListener((isAlive) => {
+                        const state = mediaSession.playerState;
+                        const reason = mediaSession.idleReason;
+                        if (state === chrome.cast.media.PlayerState.IDLE && reason === chrome.cast.media.IdleReason.FINISHED) {
+                            console.log("Cast Media Finished (Raw Listener). Playing next...");
+                            playNextSong({ userInitiated: false });
+                        }
+                    });
                 });
             }
             
