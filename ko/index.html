@@ -9719,8 +9719,8 @@ async function loadRemoteMedia() {
     const mediaInfo = new chrome.cast.media.MediaInfo(streamUrl, contentType);
     const metadata = new chrome.cast.media.MusicTrackMediaMetadata();
     
-    metadata.title = String(currentlyPlayingSong.name || 'Unknown Title');
-    metadata.artist = String(currentlyPlayingSong.artist || 'Unknown Artist');
+    metadata.title = String(currentlyPlayingSong.name || '알 수 없는 제목');
+    metadata.artist = String(currentlyPlayingSong.artist || '알려지지 않은 아티스트');
     metadata.albumName = String(currentlyPlayingSong.album || '');
     
     // Ensure image URL is valid absolute URL
@@ -9739,7 +9739,7 @@ async function loadRemoteMedia() {
             console.log('Remote media loaded successfully');
         }).catch((errorCode) => {
             console.error('Remote media load failed code: ' + errorCode);
-            showToast("Cast failed to load media");
+            showToast("캐스트가 미디어를 불러오지 못했습니다");
         });
     } catch(e) {
         console.error("Cast Load Exception:", e);
@@ -9767,6 +9767,11 @@ window.addEventListener("load", async () => {
         if (navigator.storage && navigator.storage.persist) {
             const isPersisted = await navigator.storage.persist();
             console.log(`Storage persistence granted: ${isPersisted}`);
+            
+            if (!isPersisted && !localStorage.getItem('storageAlertShown')) {
+                alert("음악 보관함의 안정성을 위해 이 페이지를 '홈 화면에 추가'하거나 북마크해 주세요. 그렇지 않으면 브라우저 정책에 의해 저장된 곡이 삭제될 수 있습니다.");
+                localStorage.setItem('storageAlertShown', 'true');
+            }
         }
 
         await initDB();
