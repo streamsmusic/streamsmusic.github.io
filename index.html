@@ -9596,6 +9596,18 @@ function setupCastListeners() {
             audioPlayer.pause(); 
             playPauseBtn.classList.remove('playing');
             playPauseIcon.textContent = 'play_arrow';
+
+            // Attach Direct Media Listener for reliable End-of-Stream detection
+            if (castSession) {
+                castSession.addMediaListener((mediaSession) => {
+                    const state = mediaSession.playerState;
+                    const reason = mediaSession.idleReason;
+                    if (state === chrome.cast.media.PlayerState.IDLE && reason === chrome.cast.media.IdleReason.FINISHED) {
+                        console.log("Cast Media Finished (Listener). Playing next...");
+                        playNextSong({ userInitiated: false });
+                    }
+                });
+            }
             
             if (currentlyPlayingSong) {
                 // Small delay to ensure session is ready for load command
@@ -9626,13 +9638,8 @@ function setupCastListeners() {
             updateMiniplayerUI(currentlyPlayingSong, 'paused');
         } else if (state === chrome.cast.media.PlayerState.BUFFERING) {
             setPlayerLoadingState(true, currentlyPlayingSong);
-        } else if (state === chrome.cast.media.PlayerState.IDLE) {
-            const mediaSession = castSession ? castSession.getMediaSession() : null;
-            if (mediaSession && mediaSession.idleReason === chrome.cast.media.IdleReason.FINISHED) {
-                console.log("Cast media finished, playing next...");
-                playNextSong({ userInitiated: false });
-            }
         }
+        // IDLE state logic is handled by castSession.addMediaListener to ensure metadata/reason availability
     });
 
     // 3. Handle Progress/Time Updates
@@ -10073,11 +10080,9 @@ playPauseBtn.addEventListener('click', async () => {
 });
         
 nextBtn.addEventListener('click', async () => {
-    if (castSession) castController.stop(); 
     await playNextSong({ userInitiated: true });
 });
 prevBtn.addEventListener('click', () => {
-    if (castSession) castController.stop();
     playPreviousSong();
 });
 
