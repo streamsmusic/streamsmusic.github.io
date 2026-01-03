@@ -2587,7 +2587,7 @@
                 <input type="text" id="tidalSearchInput" placeholder="Search" class="library-search-input" style="box-shadow: var(--sun-shadow), 0 0 15px rgba(0, 0, 0, 0.05); padding: 12px 17px 12px 42px;">
             </div>
             
-            <div id="tidal-browse-container" style="padding-top: calc(124px + env(safe-area-inset-top)); padding-bottom: 240px; display: none;">
+            <div id="tidal-browse-container" style="padding-top: calc(60px + env(safe-area-inset-top)); padding-bottom: 240px; display: none;">
                 <h3 class="section-title" style="font-size: 1.2rem;">Popular</h3>
                 <div id="tidal-trending-grid" class="item-grid"></div>
             </div>
@@ -6622,7 +6622,7 @@ async function renderDiscoverBrowse() {
             const tracks = items
                 .filter(entry => entry.item && entry.type === 'track')
                 .map(entry => entry.item)
-                .slice(0, 12);
+                .slice(0, 50);
 
             // ** FIX: Store tracks globally so playtidalTrack can find them **
             browseContext = tracks.map(track => ({
