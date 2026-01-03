@@ -7389,7 +7389,7 @@ async function playSong(song, playContext = null) {
         if (!fileUrl) {
             if (song.storage !== 'tidal') {
                  fileUrl = await recoverMissingLocalSong(song);
-                 if (fileUrl) showToast(`Recovered "${song.name}" from cloud`);
+                 if (fileUrl) showToast(`"${song.name}"을(를) 클라우드에서 복구했습니다`);
             }
         }
 
