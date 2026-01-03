@@ -6624,7 +6624,7 @@ async function renderDiscoverBrowse() {
             const tracks = items
                 .filter(entry => entry.item && entry.type === 'track')
                 .map(entry => entry.item)
-                .slice(0, 12);
+                .slice(0, 50);
 
             // ** FIX: Store tracks globally so playtidalTrack can find them **
             browseContext = tracks.map(track => ({
