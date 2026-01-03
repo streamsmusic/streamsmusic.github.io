@@ -5226,13 +5226,12 @@ function findSongByString(artistTitleString, additionalSongs = []) {
 
             if (isMobile) {
                 // Mobile Configuration: Fewer, larger blobs.
-                blobCount = 3;
-                // Radius will be between 40% and 60% of the smaller canvas dimension to fill the screen.
-                minRadiusMultiplier = 0.4; 
-                radiusVariance = 0.2;
+                blobCount = 8;
+                minRadiusMultiplier = 0.2; 
+                radiusVariance = 0.15;
             } else {
                 // Desktop Configuration: More, smaller blobs.
-                blobCount = 15;
+                blobCount = 16;
                 // Radius will be between 15% and 25% of the smaller canvas dimension.
                 minRadiusMultiplier = 0.15;
                 radiusVariance = 0.1;
