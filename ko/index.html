@@ -5271,7 +5271,8 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                     sourceSize: sourceSize,
                     time: Math.random() * 1000,
                     warpAmount: 0,
-                    baseWarp: radius * 0.1,
+                    baseWarp: radius * 0.12,
+                    viscosityOffset: Math.random() * Math.PI,
                     // Designated blobs react with higher contrast
                     contrastBoost: Math.random() > 0.6,
                     scale: 1,
@@ -5300,34 +5301,39 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             context.rotate(effectiveRotation); // Use the animated rotation
             
             context.beginPath();
-            const points = 20;
-            const noiseFrequency = 1.8;
-            const noiseSpeed = 0.004;
+            const points = 24; // Slightly more points for smoother liquid edges
+            
+            // Liquid Viscosity: Modulate the "stretchiness" over time
+            const viscosity = 1.2 + Math.sin(blob.time * 0.05) * 0.4;
+            const noiseSpeed = 0.006;
             
             for (let i = 0; i < points; i++) {
                 const angle = (i / points) * Math.PI * 2;
-                const x = Math.cos(angle);
-                const y = Math.sin(angle);
-                const noiseVal = noise((x + 1) * noiseFrequency, (y + 1) * noiseFrequency, blob.time * noiseSpeed);
+                const nx = Math.cos(angle);
+                const ny = Math.sin(angle);
                 
-                // Use the animated scale to calculate the radius for this frame
-                const radius = blob.radius * effectiveScale + (noiseVal * blob.radius * 0.3);
+                // Sample noise in 3D (X, Y, Time) for organic liquid evolution
+                const noiseVal = noise((nx + 1) * viscosity, (ny + 1) * viscosity, blob.time * noiseSpeed);
+                
+                // Calculate dynamic radius with a "surface tension" floor
+                const radius = blob.radius * effectiveScale * (0.8 + noiseVal * 0.5);
 
-                const pointX = x * radius;
-                const pointY = y * radius;
+                const pointX = nx * radius;
+                const pointY = ny * radius;
                 if (i === 0) context.moveTo(pointX, pointY);
                 else context.lineTo(pointX, pointY);
             }
             context.closePath();
             context.clip();
             
-            // The liquid strip effect (unchanged)
-            const totalWarp = blob.baseWarp + Math.sin(blob.time * 0.1) * (blob.baseWarp * 0.5);
-            const numStrips = 30;
-            const stripWidth = (blob.radius * 2 * effectiveScale) / numStrips; // Use effectiveScale here too
+            // Refined Liquid Slicing: Vertical strips with organic horizontal drift
+            const totalWarp = blob.baseWarp + Math.sin(blob.time * 0.08) * (blob.baseWarp * 0.6);
+            const numStrips = isMobile ? 20 : 30; // Adaptive strip count for performance
+            const stripWidth = (blob.radius * 2.5 * effectiveScale) / numStrips;
+            
             for (let i = 0; i < numStrips; i++) {
                 const stripX = -blob.radius * effectiveScale + i * stripWidth;
-                const sinInput = (i / numStrips) * Math.PI + blob.time * 0.1;
+                const sinInput = (i / numStrips) * Math.PI + (blob.time * 0.12);
                 const yOffset = Math.sin(sinInput) * totalWarp;
                 
                 const srcX = blob.sourceX + (blob.sourceSize / numStrips) * i;
