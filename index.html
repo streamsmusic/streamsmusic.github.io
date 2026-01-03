@@ -9686,7 +9686,7 @@ window.addEventListener("load", async () => {
 
         await loadSongsAndPlaylists();
         await scanForNewSongs();
-        await migrateToFSA();
+        // await migrateToFSA();
 
         const savedData = localStorage.getItem("currentSong");
         if (savedData) {
