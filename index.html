@@ -80,7 +80,7 @@
         }
         
         *::-webkit-scrollbar-thumb {
-        	background-color: var(--search-background);
+        	background-color: var(--modal-background);
         	border-radius: 50px;
         }
 
@@ -477,10 +477,6 @@
             min-height: 0;
         }
 
-        .view-container::-webkit-scrollbar { width: 8px; }
-        .view-container::-webkit-scrollbar-track { background: transparent; }
-        .view-container::-webkit-scrollbar-thumb { background-color: var(--search-background); border-radius: 50px; }
-
         #now-playing-view {
             padding: 20px;
             display: none; /* Default hidden */
@@ -834,13 +830,13 @@
         .music-list::-webkit-scrollbar-track,
         #lyrics-queue-panel::-webkit-scrollbar-track,
         .lyrics-container::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, .0);
+            background: transparent;
         }
         
         .music-list::-webkit-scrollbar-thumb,
         #lyrics-queue-panel::-webkit-scrollbar-thumb,
         .lyrics-container::-webkit-scrollbar-thumb {
-            background: var(--modal-transparent);
+            background: var(--modal-background);
             border-radius: 4px;
         } 
 
