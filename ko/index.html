@@ -5272,7 +5272,8 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                     time: Math.random() * 1000,
                     warpAmount: 0,
                     baseWarp: radius * 0.1,
-                    contrast: 1,
+                    // Designated blobs react with higher contrast
+                    contrastBoost: Math.random() > 0.6,
                     scale: 1,
                 });
             }
@@ -5329,13 +5330,21 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 const sinInput = (i / numStrips) * Math.PI + blob.time * 0.1;
                 const yOffset = Math.sin(sinInput) * totalWarp;
                 
-                context.drawImage(
-                    imageToDraw,
-                    blob.sourceX + (blob.sourceSize / numStrips) * i, blob.sourceY,
-                    blob.sourceSize / numStrips, blob.sourceSize,
-                    stripX, -blob.radius * effectiveScale + yOffset,
-                    stripWidth + 1, blob.radius * 2 * effectiveScale
-                );
+                const srcX = blob.sourceX + (blob.sourceSize / numStrips) * i;
+                const srcW = blob.sourceSize / numStrips;
+                const destY = -blob.radius * effectiveScale + yOffset;
+                const destH = blob.radius * 2 * effectiveScale;
+
+                context.drawImage(imageToDraw, srcX, blob.sourceY, srcW, blob.sourceSize, stripX, destY, stripWidth + 1, destH);
+
+                // Performant Contrast Boost: Double-draw with overlay mode on beat
+                if (blob.contrastBoost && currentBeatIntensity > 0.1) {
+                    context.save();
+                    context.globalCompositeOperation = 'overlay';
+                    context.globalAlpha = currentBeatIntensity * 0.4;
+                    context.drawImage(imageToDraw, srcX, blob.sourceY, srcW, blob.sourceSize, stripX, destY, stripWidth + 1, destH);
+                    context.restore();
+                }
             }
 
             context.restore();
