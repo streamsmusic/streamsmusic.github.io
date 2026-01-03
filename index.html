@@ -9627,10 +9627,10 @@ function setupCastListeners() {
         } else if (state === chrome.cast.media.PlayerState.BUFFERING) {
             setPlayerLoadingState(true, currentlyPlayingSong);
         } else if (state === chrome.cast.media.PlayerState.IDLE) {
-            // Use castPlayer.idleReason to detect if the song finished naturally
-            if (castPlayer.idleReason === chrome.cast.media.IdleReason.FINISHED) {
+            const mediaSession = castSession ? castSession.getMediaSession() : null;
+            if (mediaSession && mediaSession.idleReason === chrome.cast.media.IdleReason.FINISHED) {
                 console.log("Cast media finished, playing next...");
-                playNextSong();
+                playNextSong({ userInitiated: false });
             }
         }
     });
