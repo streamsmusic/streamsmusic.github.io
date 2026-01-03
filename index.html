@@ -6677,10 +6677,13 @@ async function renderDiscoverBrowse() {
                 name: track.title,
                 artist: track.artist.name,
                 album: track.album.title,
+                albumArtist: track.album?.artist?.name || track.artist.name,
+                year: (track.streamStartDate || track.album?.releaseDate || "").split('-')[0],
                 albumArt: getHighResArtwork(track.album.cover),
                 storage: 'tidal',
                 duration: track.duration,
-                audioQuality: track.audioQuality
+                audioQuality: track.audioQuality,
+                explicit: track.explicit || false
             }));
 
             trendingGrid.innerHTML = tracks.map(track => {
@@ -8235,9 +8238,9 @@ async function savetidalTrackToLibrary() {
         const newLocalId = Date.now() + Math.random();
         const newLocalSong = {
             id: newLocalId, name: songToSave.name, artist: songToSave.artist,
-            album: songToSave.album, albumArtist: songToSave.artist,
+            album: songToSave.album, albumArtist: songToSave.albumArtist || songToSave.artist,
             storage: 'indexeddb', handleName: `${songToSave.name}.mp3`,
-            dateAdded: Date.now(), year: new Date().getFullYear().toString(),
+            dateAdded: Date.now(), year: songToSave.year || new Date().getFullYear().toString(),
             albumArt: songToSave.albumArt, trackNumber: songToSave.trackNumber,
             discNumber: songToSave.volumeNumber,
             lyrics: songToSave.lyrics, lrcData: songToSave.lrcData, playCount: 0,
@@ -8292,9 +8295,9 @@ async function batchSaveTidalTracks(tracks) {
             const newLocalId = Date.now() + Math.random();
             const newLocalSong = {
                 id: newLocalId, name: track.name, artist: track.artist,
-                album: track.album, albumArtist: track.artist,
+                album: track.album, albumArtist: track.albumArtist || track.artist,
                 storage: 'indexeddb', handleName: `${track.name}.mp3`,
-                dateAdded: Date.now(), year: new Date().getFullYear().toString(),
+                dateAdded: Date.now(), year: track.year || new Date().getFullYear().toString(),
                 albumArt: track.albumArt, trackNumber: track.trackNumber,
                 discNumber: track.volumeNumber,
                 lyrics: fetchedLyrics ? fetchedLyrics.content : null,
@@ -8411,11 +8414,14 @@ async function saveAlbumContent(tracks, albumName, silent = false) {
 
     const tracksToSave = tracks.map(trackData => ({
         id: trackData.id, name: trackData.title, artist: trackData.artist.name,
-        album: trackData.album.title, albumArt: getHighResArtwork(trackData.album.cover),
+        album: trackData.album.title, albumArtist: trackData.album?.artist?.name || trackData.artist.name,
+        year: (trackData.streamStartDate || trackData.album?.releaseDate || "").split('-')[0],
+        albumArt: getHighResArtwork(trackData.album.cover),
         storage: 'tidal', duration: trackData.duration, audioQuality: trackData.audioQuality,
         trackNumber: trackData.trackNumber, volumeNumber: trackData.volumeNumber,
         isrc: trackData.isrc, copyright: trackData.copyright,
-        vibrantColor: trackData.album.vibrantColor
+        vibrantColor: trackData.album.vibrantColor,
+        explicit: trackData.explicit || false
     }));
 
     const savedCount = await batchSaveTidalTracks(tracksToSave);
@@ -8744,18 +8750,30 @@ async function playtidalTrack(trackId, playContext = null) {
 
         // Fix: Determine if data is already normalized (from Queue/Radio) or Raw (from API)
         const isNormalized = trackData.storage === 'tidal' && typeof trackData.artist === 'string';
-
+        
         const title = isNormalized ? trackData.name : trackData.title;
         const artist = isNormalized ? trackData.artist : (trackData.artist ? trackData.artist.name : "Unknown Artist");
         const album = isNormalized ? trackData.album : (trackData.album ? trackData.album.title : "Unknown Album");
+        const albumArtist = isNormalized ? (trackData.albumArtist || trackData.artist) : (trackData.album && trackData.album.artist ? trackData.album.artist.name : artist);
         const albumArt = isNormalized ? trackData.albumArt : getHighResArtwork(trackData.album ? trackData.album.cover : null);
         const vibrantColor = isNormalized ? trackData.vibrantColor : (trackData.album ? trackData.album.vibrantColor : null);
+        
+        let year = new Date().getFullYear().toString();
+        if (isNormalized && trackData.year) {
+            year = trackData.year;
+        } else if (trackData.streamStartDate) {
+            year = trackData.streamStartDate.split('-')[0];
+        } else if (trackData.album && trackData.album.releaseDate) {
+            year = trackData.album.releaseDate.split('-')[0];
+        }
 
         songObject = {
             id: trackData.id, 
             name: title, 
             artist: artist,
             album: album, 
+            albumArtist: albumArtist,
+            year: year,
             albumArt: albumArt,
             storage: 'tidal', 
             duration: trackData.duration, 
@@ -8768,7 +8786,7 @@ async function playtidalTrack(trackId, playContext = null) {
             peak: trackData.peak || null,
             bpm: trackData.bpm || null,
             explicit: trackData.explicit || false,
-            streamUrl: trackData.streamUrl || null
+            streamUrl: trackData.streamUrl || null // Carry over preloaded URL
         };
         
         currentlyPlayingSong = songObject;
