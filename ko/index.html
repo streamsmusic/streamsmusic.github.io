@@ -2972,6 +2972,7 @@
         let currentBeatIntensity = 0; // The smoothly animated intensity used for rendering
         let noise; // This will hold our noise generator function
         let beatIntensity = 0;
+        let preBeatIntensity = 0; // Tracks the anticipation swell before the drop
         let isTransitioning = false;
         let transitionProgress = 0;
         const TRANSITION_DURATION = 15; // in frames (approx. 0.25 seconds)
@@ -5288,14 +5289,16 @@ function findSongByString(artistTitleString, additionalSongs = []) {
          * @param {HTMLImageElement} imageToDraw - The pre-resized album art.
          * @param {number} currentBeatIntensity - The global beat intensity (0 to 1).
          */
-        function drawOrganicBlob(context, blob, imageToDraw, currentBeatIntensity) {
+        function drawOrganicBlob(context, blob, imageToDraw, currentBeatIntensity, currentPreBeat) {
             context.save();
             
-            // --- Apply Beat Animations ---
-            // 1. Calculate an effective scale for the blob (base size + beat pulse).
-            const effectiveScale = 1 + currentBeatIntensity * 0.05; // 5% size increase on beat
-            // 2. Calculate an effective rotation (base rotation + beat kick).
-            const effectiveRotation = blob.rotation + currentBeatIntensity * 0.075; // Add a rotational nudge
+            // Compound Intensity: Subtle swell (pre-beat) + Sharp kick (beat)
+            const combinedIntensity = (currentPreBeat * 0.3) + currentBeatIntensity;
+
+            // 1. Calculate an effective scale for the blob
+            const effectiveScale = 1 + combinedIntensity * 0.06; 
+            // 2. Calculate an effective rotation
+            const effectiveRotation = blob.rotation + combinedIntensity * 0.08; 
 
             context.translate(blob.x, blob.y);
             context.rotate(effectiveRotation); // Use the animated rotation
@@ -5425,11 +5428,11 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 // Pass the decaying `beatIntensity` to the drawing function
                 if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
                     ctx.globalAlpha = 1 - transitionProgress;
-                    drawOrganicBlob(ctx, blob, oldResizedArt, beatIntensity);
+                    drawOrganicBlob(ctx, blob, oldResizedArt, beatIntensity, preBeatIntensity);
                 }
                 if (currentResizedArt.complete && currentResizedArt.src) {
                     ctx.globalAlpha = isTransitioning ? transitionProgress : 1;
-                    drawOrganicBlob(ctx, blob, currentResizedArt, beatIntensity);
+                    drawOrganicBlob(ctx, blob, currentResizedArt, beatIntensity, preBeatIntensity);
                 }
                 ctx.globalAlpha = 1;
             });
@@ -5640,10 +5643,24 @@ function initVisualizer() {
 
                 if (effectiveBPM > 0) {
                     const beatInterval = 60 / effectiveBPM;
-                    const tolerance = beatInterval * 0.2; 
-                    if (isSpectralBeat && currentTime > lastBpmAlignedBeatTime + beatInterval - tolerance) {
+                    const nextBeatTime = lastBpmAlignedBeatTime + beatInterval;
+                    
+                    // Anticipation logic: Start building intensity 200ms before the predicted beat
+                    const anticipationWindow = Math.min(0.2, beatInterval * 0.3); 
+                    const timeToNextBeat = nextBeatTime - currentTime;
+
+                    if (timeToNextBeat > 0 && timeToNextBeat < anticipationWindow) {
+                        // Linear ramp up as we approach the beat
+                        preBeatIntensity = 1 - (timeToNextBeat / anticipationWindow);
+                    } else {
+                        preBeatIntensity = 0;
+                    }
+
+                    const tolerance = beatInterval * 0.15; 
+                    if (isSpectralBeat && currentTime > nextBeatTime - tolerance) {
                         triggerBeatEffect();
                         lastBpmAlignedBeatTime = currentTime;
+                        preBeatIntensity = 0; // Reset anticipation on hit
                     }
                 }
             }
