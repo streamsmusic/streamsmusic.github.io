@@ -7167,7 +7167,6 @@ function addListToQueue(trackList, position) {
 }
 
 async function handleContextQueue(type, id, metadata, position) {
-    showToast("Loading");
     const tracks = await getTracksForContext(type, id, metadata);
     if (tracks.length === 0) {
         showToast("Cannot find item");
