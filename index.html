@@ -9764,6 +9764,11 @@ window.addEventListener("load", async () => {
         if (navigator.storage && navigator.storage.persist) {
             const isPersisted = await navigator.storage.persist();
             console.log(`Storage persistence granted: ${isPersisted}`);
+            
+            if (!isPersisted && !localStorage.getItem('storageAlertShown')) {
+                alert("To ensure the stability of your music library, please ‘Add this page to your Home screen’ or bookmark it. Otherwise, saved songs may be deleted due to browser policies.");
+                localStorage.setItem('storageAlertShown', 'true');
+            }
         }
 
         await initDB();
