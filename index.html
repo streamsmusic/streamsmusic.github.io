@@ -1784,7 +1784,6 @@
         }
 
         .lyrics-container p.lyric-aside {
-            cursor: default;
             text-align: right;
         }
 
@@ -4358,10 +4357,17 @@ function setupLongPressListeners(container) {
         moved = false; // Reset on new touch start
 
         longPressTimer = setTimeout(() => {
-            if (!moved) { // Only trigger long press if user hasn't scrolled
+            if (!moved) { 
                 isLongPress = true;
-                const songId = parseFloat(musicItem.dataset.id);
-                openSongContextMenu(musicItem, songId);
+                // Dispatch a contextmenu event to reuse the global handler
+                const evt = new MouseEvent('contextmenu', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    clientX: startX,
+                    clientY: startY
+                });
+                musicItem.dispatchEvent(evt);
             }
         }, LONG_PRESS_DURATION);
     };
@@ -4410,14 +4416,10 @@ function setupLongPressListeners(container) {
         }
     };
     
-    // Handle right-click (contextmenu) events
+    // Handle right-click (contextmenu) events - NOW HANDLED GLOBALLY
     const handleContextMenu = (e) => {
-        const musicItem = e.target.closest('.music-item[data-id], .item-card[data-id]');
-        if (musicItem) {
-            e.preventDefault();
-            const songId = parseFloat(musicItem.dataset.id);
-            openSongContextMenu(musicItem, songId);
-        }
+        // e.preventDefault(); 
+        // Propagation continues to global listener
     };
 
     // Remove old listeners to prevent duplicates if this function is called multiple times
@@ -6260,8 +6262,8 @@ async function renderLyrics() {
             }).join('');
             
             lyricsContainer.innerHTML = lyricsHtml;
-
-            lyricsContainer.querySelectorAll('p:not(.lyric-aside)').forEach(lineEl => {
+            
+            lyricsContainer.querySelectorAll('p').forEach(lineEl => {
                 lineEl.addEventListener('click', () => {
                     const seekTime = parseFloat(lineEl.dataset.time);
                     if (!isNaN(seekTime)) audioPlayer.currentTime = seekTime;
@@ -7036,29 +7038,161 @@ async function generateAiAutoplaySongs() {
     return []; // Return empty array on failure
 }
 
-function openSongContextMenu(targetElement, songId, isTidalTrack = false) {
-    if (!targetElement) return; // Safety check
+async function getTracksForContext(type, id, metadata) {
+    if (type === 'song_local') {
+        const s = songs.find(x => x.id === id);
+        return s ? [s] : [];
+    }
+    if (type === 'song_tidal') {
+        const trackId = Number(id);
+        let track = lasttidalSearchResults.find(t => t.id === trackId) ||
+                    currentDrawerContext.find(t => t.id === trackId) ||
+                    browseContext.find(t => t.id === trackId) ||
+                    playQueue.find(t => t.id === trackId);
+                    
+        if (!track) {
+             try {
+                const res = await fetchHifi(`/info/?id=${id}`);
+                const json = await res.json();
+                track = json.data;
+             } catch(e) {}
+        }
+        if(!track) return [];
+        
+        return [{
+            id: track.id,
+            name: track.title || track.name,
+            artist: track.artist?.name || track.artist || "Unknown",
+            album: track.album?.title || track.album || "Unknown",
+            albumArt: getHighResArtwork(track.album?.cover),
+            storage: 'tidal',
+            duration: track.duration,
+            audioQuality: track.audioQuality,
+            explicit: track.explicit || false
+        }];
+    }
+    
+    if (type === 'album_local') {
+        const [artist, album] = id.split('::');
+        return songs.filter(s => s.albumArtist === artist && s.album === album)
+                    .sort((a,b) => (a.discNumber||1)-(b.discNumber||1) || (a.trackNumber||0)-(b.trackNumber||0));
+    }
+    
+    if (type === 'album_tidal') {
+        try {
+            const res = await fetchHifi(`/album/?id=${id}`);
+            const json = await res.json();
+            const items = (json.data?.items || []).map(i => i.item);
+            return items.map(t => ({
+                id: t.id,
+                name: t.title,
+                artist: t.artist.name,
+                album: t.album.title,
+                albumArt: getHighResArtwork(t.album.cover),
+                storage: 'tidal',
+                duration: t.duration,
+                audioQuality: t.audioQuality,
+                explicit: t.explicit || false
+            }));
+        } catch(e) { console.error(e); return []; }
+    }
+    
+    if (type === 'playlist_local') {
+        const playlist = playlists.find(p => p.id === id);
+        if (!playlist) return [];
+        return playlist.songIds.map(sid => songs.find(s => s.id === sid)).filter(Boolean);
+    }
+    
+    if (type === 'playlist_tidal') {
+        try {
+            const res = await fetchHifi(`/playlist/?id=${id}`);
+            const json = await res.json();
+            const items = (json.items || json.data?.items || []).filter(i => i.type === 'track').map(i => i.item);
+            return items.map(t => ({
+                id: t.id,
+                name: t.title,
+                artist: t.artist.name,
+                album: t.album.title,
+                albumArt: getHighResArtwork(t.album.cover),
+                storage: 'tidal',
+                duration: t.duration,
+                audioQuality: t.audioQuality,
+                explicit: t.explicit || false
+            }));
+        } catch(e) { return []; }
+    }
+    
+    if (type === 'artist_local') {
+        return songs.filter(s => s.artist === metadata.name);
+    }
+    
+    if (type === 'artist_tidal') {
+        try {
+            const res = await fetchHifi(`/artist/?f=${id}`);
+            const json = await res.json();
+            const tracks = json.tracks || [];
+            return tracks.map(t => ({
+                id: t.id,
+                name: t.title,
+                artist: t.artist.name,
+                album: t.album.title,
+                albumArt: getHighResArtwork(t.album.cover),
+                storage: 'tidal',
+                duration: t.duration,
+                audioQuality: t.audioQuality,
+                explicit: t.explicit || false
+            }));
+        } catch(e) { return []; }
+    }
+    
+    return [];
+}
+
+function addListToQueue(trackList, position) {
+    if (!trackList || trackList.length === 0) return;
+    isQueueUserModified = true;
+    
+    if (playQueue.length === 0) {
+        playSong(trackList[0], trackList);
+        return;
+    }
+    
+    if (position === 'next') {
+        playQueue.splice(currentQueueIndex + 1, 0, ...trackList);
+    } else {
+        playQueue.push(...trackList);
+    }
+    
+    if (isPanelVisible && panelContent === 'queue') renderQueue();
+}
+
+async function handleContextQueue(type, id, metadata, position) {
+    showToast("Loading");
+    const tracks = await getTracksForContext(type, id, metadata);
+    if (tracks.length === 0) {
+        showToast("Cannot find item");
+        return;
+    }
+    
+    addListToQueue(tracks, position);
+    showToast(`${tracks.length} added to queue`);
+}
+
+function openUniversalContextMenu(targetElement, type, id, metadata = {}) {
+    if (!targetElement) return;
 
     const contextMenu = document.getElementById('songContextMenu');
     
-    document.getElementById('menuAddToQueueNext').onclick = () => {
-        if (isTidalTrack) {
-            addTidalTrackToQueue(songId, 'next');
-        } else {
-            addToQueue(songId, 'next');
-        }
+    document.getElementById('menuAddToQueueNext').onclick = async () => {
+        await handleContextQueue(type, id, metadata, 'next');
         contextMenu.classList.remove('visible');
     };
-    document.getElementById('menuAddToQueueLast').onclick = () => {
-        if (isTidalTrack) {
-            addTidalTrackToQueue(songId, 'last');
-        } else {
-            addToQueue(songId, 'last');
-        }
+    document.getElementById('menuAddToQueueLast').onclick = async () => {
+        await handleContextQueue(type, id, metadata, 'last');
         contextMenu.classList.remove('visible');
     };
 
-    contextMenu.classList.add('visible'); // Make visible before measuring to get dimensions
+    contextMenu.classList.add('visible'); 
     const rect = targetElement.getBoundingClientRect();
     const menuWidth = contextMenu.offsetWidth;
     const menuHeight = contextMenu.offsetHeight;
@@ -7068,25 +7202,14 @@ function openSongContextMenu(targetElement, songId, isTidalTrack = false) {
     let top = rect.bottom + 5;
     let left = rect.left;
 
-    // Adjust for viewport boundaries
-    if (left + menuWidth > viewportWidth) {
-        left = viewportWidth - menuWidth - 10; // Keep some margin from right edge
-    }
-    if (left < 10) {
-        left = 10; // Keep some margin from left edge
-    }
-    if (top + menuHeight > viewportHeight) {
-        top = rect.top - menuHeight - 5; // If it overflows bottom, open upwards
-    }
-    if (top < 10) {
-        top = 10; // Keep some margin from top
-    }
+    if (left + menuWidth > viewportWidth) left = viewportWidth - menuWidth - 10;
+    if (left < 10) left = 10;
+    if (top + menuHeight > viewportHeight) top = rect.top - menuHeight - 5;
+    if (top < 10) top = 10;
     
     contextMenu.style.top = `${top}px`;
     contextMenu.style.left = `${left}px`;
 
-    // Add a one-time listener to close the menu when clicking elsewhere
-    // Use a timeout to prevent the current click from being captured
     setTimeout(() => {
         const closeMenuOnClickOutside = (e) => {
             if (!contextMenu.contains(e.target)) {
@@ -7095,12 +7218,10 @@ function openSongContextMenu(targetElement, songId, isTidalTrack = false) {
                 document.removeEventListener('contextmenu', closeMenuOnClickOutside, true);
             }
         };
-        // Use the capture phase (true) to catch the click before it bubbles to other elements
         document.addEventListener('click', closeMenuOnClickOutside, true);
         document.addEventListener('contextmenu', closeMenuOnClickOutside, true);
     }, 0);
 }
-
 function addTidalTrackToQueue(trackId, position = 'last') {
     isQueueUserModified = true;
     
@@ -10544,19 +10665,50 @@ document.getElementById('importLibraryInput').addEventListener('change', async (
             }
         });
 
-        // Add right-click support for Tidal View items
-        document.getElementById('tidal-results-grid').addEventListener('contextmenu', e => {
-            const trackCard = e.target.closest('.item-card[data-track-id]');
-            const cachedCard = e.target.closest('.music-item[data-cached-id]');
+        // Global Context Menu Listener
+        document.addEventListener('contextmenu', e => {
+            const target = e.target.closest('.item-card, .music-item, .highlight-card');
+            if (!target) return;
             
-            if (trackCard) {
-                e.preventDefault();
-                const trackId = parseFloat(trackCard.dataset.trackId);
-                openSongContextMenu(trackCard, trackId, true);
-            } else if (cachedCard) {
-                e.preventDefault();
-                const trackId = parseFloat(cachedCard.dataset.cachedId);
-                openSongContextMenu(cachedCard, trackId, true);
+            if (target.closest('#now-playing-view') || target.closest('#bottom-miniplayer')) return;
+
+            e.preventDefault();
+            
+            let type = null;
+            let id = null;
+            let metadata = {};
+            
+            if (target.dataset.id) {
+                type = 'song_local';
+                id = parseFloat(target.dataset.id);
+            } else if (target.dataset.trackId) {
+                type = 'song_tidal';
+                id = target.dataset.trackId;
+            } else if (target.dataset.albumId) {
+                id = target.dataset.albumId;
+                if (id.includes('::')) type = 'album_local';
+                else type = 'album_tidal';
+            } else if (target.dataset.playlistId) {
+                id = target.dataset.playlistId;
+                if (isNaN(id)) type = 'playlist_tidal';
+                else {
+                    type = 'playlist_local';
+                    id = parseInt(id);
+                }
+            } else if (target.dataset.artistId) {
+                type = 'artist_tidal';
+                id = target.dataset.artistId;
+            } else if (target.dataset.artistName) {
+                type = 'artist_local';
+                metadata.name = target.dataset.artistName;
+                id = null;
+            } else if (target.dataset.cachedId) {
+                type = 'song_tidal'; 
+                id = target.dataset.cachedId;
+            }
+            
+            if (type) {
+                openUniversalContextMenu(target, type, id, metadata);
             }
         });
     
