@@ -9600,13 +9600,10 @@ function setupCastListeners() {
         } else if (state === chrome.cast.media.PlayerState.BUFFERING) {
             setPlayerLoadingState(true, currentlyPlayingSong);
         } else if (state === chrome.cast.media.PlayerState.IDLE) {
-            // Check if track finished to play next
-            if (castSession) {
-                const mediaSession = castSession.getMediaSession();
-                if (mediaSession && mediaSession.idleReason === chrome.cast.media.IdleReason.FINISHED) {
-                    console.log("Cast media finished, playing next...");
-                    playNextSong();
-                }
+            // Use castPlayer.idleReason to detect if the song finished naturally
+            if (castPlayer.idleReason === chrome.cast.media.IdleReason.FINISHED) {
+                console.log("Cast media finished, playing next...");
+                playNextSong();
             }
         }
     });
@@ -9658,14 +9655,18 @@ async function loadRemoteMedia() {
     else if (streamUrl.includes('.mp3')) contentType = 'audio/mp3';
 
     const mediaInfo = new chrome.cast.media.MediaInfo(streamUrl, contentType);
-    mediaInfo.metadata = new chrome.cast.media.MusicTrackMediaMetadata();
-    mediaInfo.metadata.title = currentlyPlayingSong.name;
-    mediaInfo.metadata.artist = currentlyPlayingSong.artist;
-    mediaInfo.metadata.albumName = currentlyPlayingSong.album;
-    mediaInfo.metadata.images = [{ url: currentlyPlayingSong.albumArt }];
+    const metadata = new chrome.cast.media.MusicTrackMediaMetadata();
+    
+    metadata.title = String(currentlyPlayingSong.name || 'Unknown Title');
+    metadata.artist = String(currentlyPlayingSong.artist || 'Unknown Artist');
+    metadata.albumName = String(currentlyPlayingSong.album || '');
+    
+    // Ensure image URL is valid absolute URL
+    if (currentlyPlayingSong.albumArt) {
+        metadata.images = [{ url: currentlyPlayingSong.albumArt }];
+    }
 
-    // Explicitly pause local player to prevent double audio
-    audioPlayer.pause();
+    mediaInfo.metadata = metadata;
 
     const request = new chrome.cast.media.LoadRequest(mediaInfo);
     request.autoplay = true;
