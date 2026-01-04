@@ -5233,7 +5233,7 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 const radiusY = (Math.random() * radiusVariance + minRadiusMultiplier) * baseSize * (0.5 + Math.random());
 
                 // Much smaller source window = more "zoomed in" texture = more apparent distortion
-                const sourceSize = Math.min(sectorW, sectorH) * 0.3; 
+                const sourceSize = Math.min(sectorW, sectorH) * 0.8; 
                 
                 blobs.push({
                     x: Math.random() * canvasWidth,
@@ -5439,23 +5439,28 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 sceneCtx = sceneCanvas.getContext('2d', { willReadFrequently: true });
             }
 
-            // 1. Draw Clean Backgrounds (Blended)
+            // 1. Draw Clean Backgrounds (Blended & Rotating)
             sceneCtx.clearRect(0, 0, canvasWidth, canvasHeight);
             
-            // Draw Old BG (Fading Out)
-            if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
+            const drawRotatedBG = (img, alpha) => {
                 sceneCtx.save();
-                sceneCtx.globalAlpha = 1 - transitionProgress;
-                sceneCtx.drawImage(oldResizedArt, 0, 0, canvasWidth, canvasHeight);
+                sceneCtx.globalAlpha = alpha;
+                sceneCtx.translate(canvasWidth / 2, canvasHeight / 2);
+                sceneCtx.rotate(backgroundRotation);
+                // Draw large enough to cover corners during rotation
+                const scale = 1.5;
+                sceneCtx.drawImage(img, -canvasWidth * scale / 2, -canvasHeight * scale / 2, canvasWidth * scale, canvasHeight * scale);
                 sceneCtx.restore();
+            };
+
+            // Draw Old BG
+            if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
+                drawRotatedBG(oldResizedArt, 1 - transitionProgress);
             }
             
-            // Draw New BG (Fading In)
+            // Draw New BG
             if (currentResizedArt.complete && currentResizedArt.src) {
-                sceneCtx.save();
-                sceneCtx.globalAlpha = isTransitioning ? transitionProgress : 1;
-                sceneCtx.drawImage(currentResizedArt, 0, 0, canvasWidth, canvasHeight);
-                sceneCtx.restore();
+                drawRotatedBG(currentResizedArt, isTransitioning ? transitionProgress : 1);
             }
 
             // 2. Draw Blobs (Blended)
