@@ -5236,14 +5236,13 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             const maxSpeed = 0.5;
 
             if (isMobile) {
-                // Larger, overlapping blobs to form a continuous liquid surface
-                blobCount = 6;
-                minRadiusMultiplier = 0.5; // Bigger base size
-                radiusVariance = 0.3;
-            } else {
-                blobCount = 12;
-                minRadiusMultiplier = 0.3;
+                blobCount = 10;
+                minRadiusMultiplier = 0.25; 
                 radiusVariance = 0.2;
+            } else {
+                blobCount = 18;
+                minRadiusMultiplier = 0.15;
+                radiusVariance = 0.15;
             }
 
             const cols = Math.ceil(Math.sqrt(blobCount));
@@ -5403,10 +5402,15 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 blob.y += blob.vy;
                 blob.rotation += blob.rotationSpeed;
                 
-                // Soft Boundary bounce to keep blobs on screen
-                const margin = blob.radius * 0.5;
-                if (blob.x < -margin || blob.x > canvasWidth + margin) blob.vx *= -1;
-                if (blob.y < -margin || blob.y > canvasHeight + margin) blob.vy *= -1;
+                // Allow blobs to float off screen and wrap around
+                // We use a generous margin so they don't "pop" in/out
+                const wrapMargin = blob.radius * 2; 
+                
+                if (blob.x - wrapMargin > canvasWidth) blob.x = -wrapMargin;
+                else if (blob.x + wrapMargin < 0) blob.x = canvasWidth + wrapMargin;
+                
+                if (blob.y - wrapMargin > canvasHeight) blob.y = -wrapMargin;
+                else if (blob.y + wrapMargin < 0) blob.y = canvasHeight + wrapMargin;
 
                 // --- Draw Blobs ---
                 if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
