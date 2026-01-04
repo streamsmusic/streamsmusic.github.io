@@ -2974,18 +2974,6 @@
         let beatIntensity = 0;
         let preBeatIntensity = 0; // Tracks the anticipation swell before the drop
         let isTransitioning = false;
-        function drawNoise(context, width, height) {
-            context.save();
-            context.globalCompositeOperation = 'overlay';
-            context.globalAlpha = 0.05; // Subtle grain
-            for (let i = 0; i < 5; i++) { // Layered jittered noise
-                const x = Math.random() * width;
-                const y = Math.random() * height;
-                context.fillStyle = Math.random() > 0.5 ? '#fff' : '#000';
-                context.fillRect(x, y, Math.random() * 200, Math.random() * 200);
-            }
-            context.restore();
-        }
         let transitionProgress = 0;
         const TRANSITION_DURATION = 15; // in frames (approx. 0.25 seconds)
         let visualizerFrameId = null;
@@ -5283,8 +5271,10 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                     sourceY: sourceY,
                     sourceSize: sourceSize,
                     time: Math.random() * 1000,
-                    baseWarp: radius * 0.15,
-                    viscosity: 0.8 + Math.random() * 1.5, // Random irregularity factor
+                    warpAmount: 0,
+                    baseWarp: radius * 0.12,
+                    viscosityOffset: Math.random() * Math.PI,
+                    // Designated blobs react with higher contrast
                     contrastBoost: Math.random() > 0.6,
                     scale: 1,
                 });
@@ -5301,42 +5291,36 @@ function findSongByString(artistTitleString, additionalSongs = []) {
          */
         function drawOrganicBlob(context, blob, imageToDraw, currentBeatIntensity, currentPreBeat) {
             context.save();
+            
+            // Compound Intensity: Subtle swell (pre-beat) + Sharp kick (beat)
             const combinedIntensity = (currentPreBeat * 0.3) + currentBeatIntensity;
+
+            // 1. Calculate an effective scale for the blob
             const effectiveScale = 1 + combinedIntensity * 0.06; 
+            // 2. Calculate an effective rotation
             const effectiveRotation = blob.rotation + combinedIntensity * 0.08; 
 
             context.translate(blob.x, blob.y);
-            context.rotate(effectiveRotation);
+            context.rotate(effectiveRotation); // Use the animated rotation
             
             context.beginPath();
-            const points = 32; // Higher resolution for non-circular morphing
-            const noiseSpeed = 0.008;
+            const points = 24; // Slightly more points for smoother liquid edges
+            
+            // Liquid Viscosity: Modulate the "stretchiness" over time
+            const viscosity = 1.2 + Math.sin(blob.time * 0.05) * 0.4;
+            const noiseSpeed = 0.006;
             
             for (let i = 0; i < points; i++) {
                 const angle = (i / points) * Math.PI * 2;
                 const nx = Math.cos(angle);
                 const ny = Math.sin(angle);
                 
-                // 1. Base irregular shape via noise
-                let noiseVal = noise((nx + 1) * blob.viscosity, (ny + 1) * blob.viscosity, blob.time * noiseSpeed);
+                // Sample noise in 3D (X, Y, Time) for organic liquid evolution
+                const noiseVal = noise((nx + 1) * viscosity, (ny + 1) * viscosity, blob.time * noiseSpeed);
                 
-                // 2. Sticky Logic: Pull vertices toward nearby blobs
-                let attraction = 0;
-                blobs.forEach(other => {
-                    if (other === blob) return;
-                    const dx = other.x - blob.x;
-                    const dy = other.y - blob.y;
-                    const dist = Math.sqrt(dx*dx + dy*dy);
-                    if (dist < blob.radius * 3) {
-                        const angleToOther = Math.atan2(dy, dx) - effectiveRotation;
-                        const diff = Math.cos(angle - angleToOther);
-                        if (diff > 0) {
-                            attraction += (diff * (1 - dist / (blob.radius * 3))) * 0.4;
-                        }
-                    }
-                });
+                // Calculate dynamic radius with a "surface tension" floor
+                const radius = blob.radius * effectiveScale * (0.8 + noiseVal * 0.5);
 
-                const radius = blob.radius * effectiveScale * (0.6 + noiseVal * 0.7 + attraction);
                 const pointX = nx * radius;
                 const pointY = ny * radius;
                 if (i === 0) context.moveTo(pointX, pointY);
@@ -5406,23 +5390,10 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 }
             }
             const drawRotatingBackground = (image) => {
-                const combined = (preBeatIntensity * 0.2) + beatIntensity;
-                const scale = 1.5 + (combined * 0.1); 
-                const jitter = combined * 15;
-                
+                const scale = 1.5; // Draw larger to prevent corners from appearing during rotation
                 ctx.save();
-                // Random translation jitter on beat
-                ctx.translate(
-                    (canvasWidth / 2) + (Math.random() - 0.5) * jitter, 
-                    (canvasHeight / 2) + (Math.random() - 0.5) * jitter
-                );
+                ctx.translate(canvasWidth / 2, canvasHeight / 2);
                 ctx.rotate(backgroundRotation);
-                
-                // Random skew distortion
-                if (combined > 0.1) {
-                    ctx.transform(1, (Math.random() - 0.5) * 0.05, (Math.random() - 0.5) * 0.05, 1, 0, 0);
-                }
-
                 ctx.drawImage(image, 
                     -canvasWidth * scale / 2, -canvasHeight * scale / 2, 
                     canvasWidth * scale, canvasHeight * scale
@@ -5470,8 +5441,6 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             if (beatIntensity > 0.001) {
                 ctx.restore();
             }
-
-            drawNoise(ctx, canvasWidth, canvasHeight);
         }
         
         /**
