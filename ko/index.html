@@ -5256,53 +5256,74 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             }
         }
 
+        // Cache for background pixel manipulation
+        let bgCanvas, bgCtx, bgData;
+        const BG_RES = 80; // Low resolution for performance (80x80 pixels)
+
         /**
-         * Draws the full background image with heavy, smooth grid-based distortion.
+         * Draws the background using per-pixel Simplex Noise displacement.
+         * Renders to a tiny offscreen buffer and scales up for "Extreme" fluid effect.
          */
-        function drawDistortedBackground(context, img, time, alpha) {
+        function drawExtremeNoiseBackground(context, img, time, alpha) {
             if (alpha <= 0) return;
-            context.globalAlpha = alpha;
-
-            const cols = 12; // Grid resolution
-            const rows = 12; 
-            const cw = context.canvas.width;
-            const ch = context.canvas.height;
-            const cellW = Math.ceil(cw / cols);
-            const cellH = Math.ceil(ch / rows);
             
-            const imgW = img.width;
-            const imgH = img.height;
-            const srcCellW = imgW / cols;
-            const srcCellH = imgH / rows;
+            // Initialize offscreen buffer if needed
+            if (!bgCanvas) {
+                bgCanvas = document.createElement('canvas');
+                bgCanvas.width = BG_RES;
+                bgCanvas.height = BG_RES;
+                bgCtx = bgCanvas.getContext('2d', { willReadFrequently: true });
+            }
 
-            // Slow down time for the background warp
-            const t = time * 0.0005;
+            // Draw source image to buffer to get pixel data
+            bgCtx.drawImage(img, 0, 0, BG_RES, BG_RES);
+            const srcData = bgCtx.getImageData(0, 0, BG_RES, BG_RES);
+            const destImageData = bgCtx.createImageData(BG_RES, BG_RES);
+            const src = srcData.data;
+            const dest = destImageData.data;
 
-            for (let c = 0; c < cols; c++) {
-                for (let r = 0; r < rows; r++) {
-                    // 3D Noise for smooth continuous warping (x, y, time)
-                    // Offset inputs slightly to separate X and Y vectors
-                    const nX = noise(c * 0.1, r * 0.1, t);
-                    const nY = noise(c * 0.1 + 10, r * 0.1 + 10, t);
-                    
-                    // Map 0..1 to -1..1
-                    const vecX = (nX - 0.5) * 2;
-                    const vecY = (nY - 0.5) * 2;
-                    
-                    // "Heavily distorted": Shift source window by up to 1.5 grid cells
-                    const shiftX = vecX * srcCellW * 1.5;
-                    const shiftY = vecY * srcCellH * 1.5;
+            const t = time * 0.0003; // Slow, heavy movement
+            const noiseScale = 0.03; // Frequency of swirls
+            const amp = 40; // Amplitude of distortion (in pixels relative to BG_RES)
 
-                    // Calculate source coordinates with clamping to prevent edge flickering
-                    // (Though drawImage handles out-of-bounds gracefully mostly, clamping keeps color)
-                    const sx = Math.max(0, Math.min(imgW - srcCellW, (c * srcCellW) + shiftX));
-                    const sy = Math.max(0, Math.min(imgH - srcCellH, (r * srcCellH) + shiftY));
+            for (let y = 0; y < BG_RES; y++) {
+                for (let x = 0; x < BG_RES; x++) {
+                    // Extreme Simplex Noise lookup
+                    const nX = noise(x * noiseScale, y * noiseScale, t);
+                    const nY = noise(x * noiseScale + 100, y * noiseScale + 100, t);
 
-                    // Draw cell with slight overlap (+1) to fix sub-pixel grid lines
-                    context.drawImage(img, sx, sy, srcCellW, srcCellH, c * cellW, r * cellH, cellW + 1, cellH + 1);
+                    // Map noise (0..1) to coordinate shift (-amp to +amp)
+                    const shiftX = (nX - 0.5) * 2 * amp;
+                    const shiftY = (nY - 0.5) * 2 * amp;
+
+                    // Source coordinates with wrapping
+                    let sx = Math.floor(x + shiftX);
+                    let sy = Math.floor(y + shiftY);
+
+                    // Wrap coordinates to create infinite fluid texture
+                    sx = ((sx % BG_RES) + BG_RES) % BG_RES;
+                    sy = ((sy % BG_RES) + BG_RES) % BG_RES;
+
+                    // Pixel index mapping
+                    const destIdx = (y * BG_RES + x) * 4;
+                    const srcIdx = (sy * BG_RES + sx) * 4;
+
+                    dest[destIdx] = src[srcIdx];         // R
+                    dest[destIdx + 1] = src[srcIdx + 1]; // G
+                    dest[destIdx + 2] = src[srcIdx + 2]; // B
+                    dest[destIdx + 3] = 255;             // Alpha
                 }
             }
-            context.globalAlpha = 1;
+
+            // Put distorted pixels back to buffer
+            bgCtx.putImageData(destImageData, 0, 0);
+
+            // Draw buffer to main canvas (Hardware scale up)
+            context.save();
+            context.globalAlpha = alpha;
+            // Blur slightly to hide pixelation from low res
+            context.drawImage(bgCanvas, 0, 0, context.canvas.width, context.canvas.height);
+            context.restore();
         }
 
         /**
@@ -5361,19 +5382,30 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             // Clip to this organic shape
             context.clip();
 
-            // Texture Warping (Distort the background image)
-            // We continuously pan and zoom the source image inside the blob to create flow
-            const warpX = Math.sin(time * 2) * (blob.sourceSize * 0.1);
-            const warpY = Math.cos(time * 1.5) * (blob.sourceSize * 0.1);
-            const warpZoom = 1 + (intensity * 0.2) + (Math.sin(time) * 0.1);
+            // Simplex Noise Texture Warping
+            // Calculate offsets based on the blob's physical location and time
+            // This creates a "portal" effect where the texture swirls inside the blob
+            const noiseT = time * 0.5;
+            const nX = noise(blob.x * 0.01, blob.y * 0.01, noiseT);
+            const nY = noise(blob.x * 0.01 + 50, blob.y * 0.01 + 50, noiseT);
+            
+            // Map 0..1 to substantial pixel shifts
+            const warpX = (nX - 0.5) * (blob.sourceSize * 0.8);
+            const warpY = (nY - 0.5) * (blob.sourceSize * 0.8);
+            
+            // Zoom reacts to beat intensity
+            const warpZoom = 1 + (intensity * 0.3) + (nX * 0.2);
 
-            // Draw image covering the blob bounding box
             const drawW = blob.radius * 4;
             const drawH = blob.radius * 4;
             
+            // Use Math.max/min to clamp source coords prevents flashing
+            const sx = Math.max(0, Math.min(imageToDraw.width - blob.sourceSize, blob.sourceX + warpX));
+            const sy = Math.max(0, Math.min(imageToDraw.height - blob.sourceSize, blob.sourceY + warpY));
+
             context.drawImage(
                 imageToDraw, 
-                blob.sourceX + warpX, blob.sourceY + warpY, blob.sourceSize, blob.sourceSize,
+                sx, sy, blob.sourceSize, blob.sourceSize,
                 -drawW/2, -drawH/2, drawW * warpZoom, drawH * warpZoom
             );
 
@@ -5424,10 +5456,10 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             // --- Draw Distorted Backgrounds ---
             // We draw this BEFORE the blobs so it sits behind them
             if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
-                drawDistortedBackground(ctx, oldResizedArt, time, 1 - transitionProgress);
+                drawExtremeNoiseBackground(ctx, oldResizedArt, time, 1 - transitionProgress);
             }
             if (currentResizedArt.complete && currentResizedArt.src) {
-                drawDistortedBackground(ctx, currentResizedArt, time, isTransitioning ? transitionProgress : 1);
+                drawExtremeNoiseBackground(ctx, currentResizedArt, time, isTransitioning ? transitionProgress : 1);
             }
             
             // --- Update and Draw Blobs ---
