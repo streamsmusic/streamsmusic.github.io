@@ -5236,58 +5236,48 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             const maxSpeed = 0.5;
 
             if (isMobile) {
-                blobCount = 8;
-                minRadiusMultiplier = 0.2; 
-                radiusVariance = 0.15;
+                // Larger, overlapping blobs to form a continuous liquid surface
+                blobCount = 6;
+                minRadiusMultiplier = 0.5; // Bigger base size
+                radiusVariance = 0.3;
             } else {
-                blobCount = 15;
-                minRadiusMultiplier = 0.15;
-                radiusVariance = 0.1;
+                blobCount = 12;
+                minRadiusMultiplier = 0.3;
+                radiusVariance = 0.2;
             }
 
-            // Create a grid of sectors to ensure source diversity
             const cols = Math.ceil(Math.sqrt(blobCount));
             const rows = Math.ceil(blobCount / cols);
-            const sectors = [];
-            for (let r = 0; r < rows; r++) {
-                for (let c = 0; c < cols; c++) sectors.push({ r, c });
-            }
-            // Shuffle sectors
-            for (let i = sectors.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [sectors[i], sectors[j]] = [sectors[j], sectors[i]];
-            }
-
             const sectorW = imgWidth / cols;
             const sectorH = imgHeight / rows;
 
             for (let i = 0; i < blobCount; i++) {
+                // Significantly vary the size/shape
                 const radius = (Math.random() * radiusVariance + minRadiusMultiplier) * Math.min(canvasWidth, canvasHeight);
-
-                // Select a unique area from the shuffled sectors
-                const sector = sectors[i % sectors.length];
-                const sourceSize = Math.min(sectorW, sectorH) * (Math.random() * 0.4 + 0.6);
-                const sourceX = (sector.c * sectorW) + Math.random() * (sectorW - sourceSize);
-                const sourceY = (sector.r * sectorH) + Math.random() * (sectorH - sourceSize);
+                const sourceSize = Math.min(sectorW, sectorH) * (Math.random() * 0.5 + 0.5);
+                
+                // Random position with screen constraints bias
+                const x = Math.random() * canvasWidth;
+                const y = Math.random() * canvasHeight;
 
                 blobs.push({
-                    x: Math.random() * canvasWidth,
-                    y: Math.random() * canvasHeight,
-                    vx: (Math.random() - 0.5) * maxSpeed,
-                    vy: (Math.random() - 0.5) * maxSpeed,
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * maxSpeed * 1.5,
+                    vy: (Math.random() - 0.5) * maxSpeed * 1.5,
                     radius: radius,
-                    rotation: Math.random() * Math.PI * 2,
-                    rotationSpeed: (Math.random() - 0.5) * 0.002,
-                    sourceX: sourceX,
-                    sourceY: sourceY,
+                    // Non-uniform scaling for oval/amoeba shapes
+                    stretchX: 0.8 + Math.random() * 0.4,
+                    stretchY: 0.8 + Math.random() * 0.4,
+                    // Independent morph speeds
+                    morphSpeed: 0.002 + Math.random() * 0.004,
+                    morphOffset: Math.random() * 100,
+                    sourceX: (Math.random() * (imgWidth - sourceSize)),
+                    sourceY: (Math.random() * (imgHeight - sourceSize)),
                     sourceSize: sourceSize,
-                    time: Math.random() * 1000,
-                    warpAmount: 0,
-                    baseWarp: radius * 0.12,
-                    viscosityOffset: Math.random() * Math.PI,
-                    // Designated blobs react with higher contrast
-                    contrastBoost: Math.random() > 0.6,
-                    scale: 1,
+                    rotation: Math.random() * Math.PI * 2,
+                    rotationSpeed: (Math.random() - 0.5) * 0.005,
+                    contrastBoost: Math.random() > 0.5,
                 });
             }
         }
@@ -5303,68 +5293,73 @@ function findSongByString(artistTitleString, additionalSongs = []) {
         function drawOrganicBlob(context, blob, imageToDraw, currentBeatIntensity, currentPreBeat) {
             context.save();
             
-            // Compound Intensity: Subtle swell (pre-beat) + Sharp kick (beat)
-            const combinedIntensity = (currentPreBeat * 0.3) + currentBeatIntensity;
-
-            // 1. Calculate an effective scale for the blob
-            const effectiveScale = 1 + combinedIntensity * 0.06; 
-            // 2. Calculate an effective rotation
-            const effectiveRotation = blob.rotation + combinedIntensity * 0.08; 
+            const time = performance.now() * blob.morphSpeed + blob.morphOffset;
+            
+            // Beat reaction + Pre-beat swell
+            const intensity = currentBeatIntensity + (currentPreBeat * 0.2);
+            const scale = (1 + intensity * 0.15) * blob.stretchX;
+            const scaleY = (1 + intensity * 0.1) * blob.stretchY;
 
             context.translate(blob.x, blob.y);
-            context.rotate(effectiveRotation); // Use the animated rotation
+            context.rotate(blob.rotation + (intensity * 0.1));
             
             context.beginPath();
-            const points = 24; // Slightly more points for smoother liquid edges
             
-            // Liquid Viscosity: Modulate the "stretchiness" over time
-            const viscosity = 1.2 + Math.sin(blob.time * 0.05) * 0.4;
-            const noiseSpeed = 0.006;
+            // Organic Shape Generation
+            // Use distinct noise lookups for X and Y to create non-circular, amoeba shapes
+            const points = [];
+            const numPoints = 12; // Fewer points, smoothed with curves
             
-            for (let i = 0; i < points; i++) {
-                const angle = (i / points) * Math.PI * 2;
-                const nx = Math.cos(angle);
-                const ny = Math.sin(angle);
+            for (let i = 0; i <= numPoints; i++) {
+                const angle = (i / numPoints) * Math.PI * 2;
                 
-                // Sample noise in 3D (X, Y, Time) for organic liquid evolution
-                const noiseVal = noise((nx + 1) * viscosity, (ny + 1) * viscosity, blob.time * noiseSpeed);
+                // Aggressive noise displacement for "calculated" removal
+                const noiseX = noise(Math.cos(angle) + 10, Math.sin(angle) + 10, time);
+                const noiseY = noise(Math.cos(angle) + 20, Math.sin(angle) + 20, time);
                 
-                // Calculate dynamic radius with a "surface tension" floor
-                const radius = blob.radius * effectiveScale * (0.8 + noiseVal * 0.5);
+                // Varying radius
+                const r = blob.radius * (0.8 + noiseX * 0.6); // 60% variance
+                
+                points.push({
+                    x: Math.cos(angle) * r * scale,
+                    y: Math.sin(angle) * r * scaleY
+                });
+            }
 
-                const pointX = nx * radius;
-                const pointY = ny * radius;
-                if (i === 0) context.moveTo(pointX, pointY);
-                else context.lineTo(pointX, pointY);
+            // Draw smooth curve through points
+            context.moveTo(points[0].x, points[0].y);
+            for (let i = 0; i < points.length - 1; i++) {
+                const midX = (points[i].x + points[i + 1].x) / 2;
+                const midY = (points[i].y + points[i + 1].y) / 2;
+                context.quadraticCurveTo(points[i].x, points[i].y, midX, midY);
             }
             context.closePath();
+            
+            // Clip to this organic shape
             context.clip();
-            
-            // Refined Liquid Slicing: Vertical strips with organic horizontal drift
-            const totalWarp = blob.baseWarp + Math.sin(blob.time * 0.08) * (blob.baseWarp * 0.6);
-            const numStrips = isMobile ? 20 : 30; // Adaptive strip count for performance
-            const stripWidth = (blob.radius * 2.5 * effectiveScale) / numStrips;
-            
-            for (let i = 0; i < numStrips; i++) {
-                const stripX = -blob.radius * effectiveScale + i * stripWidth;
-                const sinInput = (i / numStrips) * Math.PI + (blob.time * 0.12);
-                const yOffset = Math.sin(sinInput) * totalWarp;
-                
-                const srcX = blob.sourceX + (blob.sourceSize / numStrips) * i;
-                const srcW = blob.sourceSize / numStrips;
-                const destY = -blob.radius * effectiveScale + yOffset;
-                const destH = blob.radius * 2 * effectiveScale;
 
-                context.drawImage(imageToDraw, srcX, blob.sourceY, srcW, blob.sourceSize, stripX, destY, stripWidth + 1, destH);
+            // Texture Warping (Distort the background image)
+            // We continuously pan and zoom the source image inside the blob to create flow
+            const warpX = Math.sin(time * 2) * (blob.sourceSize * 0.1);
+            const warpY = Math.cos(time * 1.5) * (blob.sourceSize * 0.1);
+            const warpZoom = 1 + (intensity * 0.2) + (Math.sin(time) * 0.1);
 
-                // Performant Contrast Boost: Double-draw with overlay mode on beat
-                if (blob.contrastBoost && currentBeatIntensity > 0.1) {
-                    context.save();
-                    context.globalCompositeOperation = 'overlay';
-                    context.globalAlpha = currentBeatIntensity * 0.4;
-                    context.drawImage(imageToDraw, srcX, blob.sourceY, srcW, blob.sourceSize, stripX, destY, stripWidth + 1, destH);
-                    context.restore();
-                }
+            // Draw image covering the blob bounding box
+            const drawW = blob.radius * 4;
+            const drawH = blob.radius * 4;
+            
+            context.drawImage(
+                imageToDraw, 
+                blob.sourceX + warpX, blob.sourceY + warpY, blob.sourceSize, blob.sourceSize,
+                -drawW/2, -drawH/2, drawW * warpZoom, drawH * warpZoom
+            );
+
+            // Contrast Boost
+            if (blob.contrastBoost && intensity > 0.05) {
+                context.globalCompositeOperation = 'overlay';
+                context.globalAlpha = intensity * 0.6;
+                context.fillStyle = '#fff'; // Mix with white for highlight
+                context.fillRect(-drawW, -drawH, drawW*2, drawH*2);
             }
 
             context.restore();
@@ -5400,43 +5395,20 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                     transitionProgress = 1; isTransitioning = false; oldResizedArt = new Image();
                 }
             }
-            const drawRotatingBackground = (image) => {
-                const scale = 1.5; // Draw larger to prevent corners from appearing during rotation
-                ctx.save();
-                ctx.translate(canvasWidth / 2, canvasHeight / 2);
-                ctx.rotate(backgroundRotation);
-                ctx.drawImage(image, 
-                    -canvasWidth * scale / 2, -canvasHeight * scale / 2, 
-                    canvasWidth * scale, canvasHeight * scale
-                );
-                ctx.restore();
-            };
-            if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
-                ctx.globalAlpha = 1 - transitionProgress;
-                drawRotatingBackground(oldResizedArt);
-            }
-            if (currentResizedArt.complete && currentResizedArt.src) {
-                ctx.globalAlpha = isTransitioning ? transitionProgress : 1;
-                drawRotatingBackground(currentResizedArt);
-            }
-            ctx.globalAlpha = 1;
             
             // --- Update and Draw Blobs ---
             blobs.forEach(blob => {
-                // Blob movement logic is unchanged
+                // Update Physics
                 blob.x += blob.vx;
                 blob.y += blob.vy;
                 blob.rotation += blob.rotationSpeed;
-                const radius = blob.radius * (1 + beatIntensity * 0.1); // Use an effective radius for wrapping
-                if (blob.x - radius > canvasWidth) { blob.x = -radius; } 
-                else if (blob.x + radius < 0) { blob.x = canvasWidth + radius; }
-                if (blob.y - radius > canvasHeight) { blob.y = -radius; } 
-                else if (blob.y + radius < 0) { blob.y = canvasHeight + radius; }
+                
+                // Soft Boundary bounce to keep blobs on screen
+                const margin = blob.radius * 0.5;
+                if (blob.x < -margin || blob.x > canvasWidth + margin) blob.vx *= -1;
+                if (blob.y < -margin || blob.y > canvasHeight + margin) blob.vy *= -1;
 
-                blob.time += 0.1;
-
-                // --- Draw Blobs with Transition and Beat Intensity ---
-                // Pass the decaying `beatIntensity` to the drawing function
+                // --- Draw Blobs ---
                 if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
                     ctx.globalAlpha = 1 - transitionProgress;
                     drawOrganicBlob(ctx, blob, oldResizedArt, beatIntensity, preBeatIntensity);
