@@ -1443,36 +1443,15 @@
             z-index: -9998;
         }
 
-        /* Multi-layered High-Fidelity Grain */
-        #distortion-container::before, 
+        /* High-frequency grain overlay */
         #distortion-container::after {
             content: "";
             position: absolute;
-            inset: -200%;
+            inset: -100%;
             background-image: url("data:image/svg+xml,%3Csvg%20width%3D%22128%22%20height%3D%22128%22%20viewBox%3D%220%200%20512%20512%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cfilter%20id%3D%22noiseFilter%22%20color-interpolation-filters%3D%22sRGB%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.9%22%20numOctaves%3D%224%22%20stitchTiles%3D%22stitch%22/%3E%3C/filter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url(%23noiseFilter)%22/%3E%3C/svg%3E");
-            opacity: 0.2;
-            pointer-events: none;
-        }
-
-        #distortion-container::before {
+            opacity: 1;
             mix-blend-mode: overlay;
-            animation: grain-layer-1 1s steps(4) infinite;
-        }
-
-        #distortion-container::after {
-            mix-blend-mode: soft-light;
-            animation: grain-layer-2 1.2s steps(3) reverse infinite;
-            filter: contrast(1.5) brightness(1.2);
-        }
-
-        @keyframes grain-layer-1 {
-            0% { transform: translate(0,0) scale(1); }
-            50% { transform: translate(-5%, -2%) scale(1.1); }
-            100% { transform: translate(2%, 4%) scale(0.9); }
-        }
-        @keyframes grain-layer-2 {
-            0% { transform: translate(0,0) rotate(0deg); }
-            100% { transform: translate(3%, -3%) rotate(90deg); }
+            pointer-events: none;
         }
 
         html.high-contrast #distortion-container {
