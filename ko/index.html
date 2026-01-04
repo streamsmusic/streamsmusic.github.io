@@ -2977,7 +2977,6 @@
         let distortionCanvas, ctx;
         let currentResizedArt = new Image();
         let oldResizedArt = new Image();
-        let baseColor = '#111'; // Default background color
         let blobs = [];
         let animationFrameId;
         let backgroundRotation = 0;
@@ -5211,16 +5210,6 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 newResized.dataset.originalUrl = imageUrl;
                 currentResizedArt = newResized;
 
-                // Extract base color for background fill
-                try {
-                    const c = document.createElement('canvas');
-                    c.width = 1; c.height = 1;
-                    const cx = c.getContext('2d');
-                    cx.drawImage(newResized, 0, 0, 1, 1);
-                    const p = cx.getImageData(0, 0, 1, 1).data;
-                    baseColor = `rgb(${p[0]}, ${p[1]}, ${p[2]})`;
-                } catch(e) { baseColor = '#111'; }
-
                 // Start a new transition.
                 isTransitioning = true;
                 transitionProgress = 0;
@@ -5248,12 +5237,12 @@ function findSongByString(artistTitleString, additionalSongs = []) {
 
             if (isMobile) {
                 blobCount = 8;
-                minRadiusMultiplier = 0.5; // Huge blobs
-                radiusVariance = 0.3;
+                minRadiusMultiplier = 0.2; 
+                radiusVariance = 0.15;
             } else {
-                blobCount = 16;
-                minRadiusMultiplier = 0.3;
-                radiusVariance = 0.2;
+                blobCount = 15;
+                minRadiusMultiplier = 0.15;
+                radiusVariance = 0.1;
             }
 
             // Create a grid of sectors to ensure source diversity
@@ -5273,9 +5262,9 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             const sectorH = imgHeight / rows;
 
             for (let i = 0; i < blobCount; i++) {
-                // Massive sizes to prevent bleed
                 const radius = (Math.random() * radiusVariance + minRadiusMultiplier) * Math.min(canvasWidth, canvasHeight);
 
+                // Select a unique area from the shuffled sectors
                 const sector = sectors[i % sectors.length];
                 const sourceSize = Math.min(sectorW, sectorH) * (Math.random() * 0.4 + 0.6);
                 const sourceX = (sector.c * sectorW) + Math.random() * (sectorW - sourceSize);
@@ -5284,8 +5273,8 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 blobs.push({
                     x: Math.random() * canvasWidth,
                     y: Math.random() * canvasHeight,
-                    vx: (Math.random() - 0.5) * maxSpeed * 0.5, // Slower, heavier movement
-                    vy: (Math.random() - 0.5) * maxSpeed * 0.5,
+                    vx: (Math.random() - 0.5) * maxSpeed,
+                    vy: (Math.random() - 0.5) * maxSpeed,
                     radius: radius,
                     rotation: Math.random() * Math.PI * 2,
                     rotationSpeed: (Math.random() - 0.5) * 0.002,
@@ -5293,13 +5282,14 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                     sourceY: sourceY,
                     sourceSize: sourceSize,
                     time: Math.random() * 1000,
-                    // Unique morphing properties
-                    stretchPhase: Math.random() * Math.PI * 2, 
-                    stretchSpeed: 0.01 + Math.random() * 0.02,
-                    baseWarp: radius * 0.2, // Stronger internal warp
+                    warpAmount: 0,
+                    baseWarp: radius * 0.12,
+                    viscosityOffset: Math.random() * Math.PI,
+                    // Designated blobs react with higher contrast
                     contrastBoost: Math.random() > 0.6,
+                    scale: 1,
                 });
-            
+            }
         }
 
         /**
@@ -5312,80 +5302,67 @@ function findSongByString(artistTitleString, additionalSongs = []) {
          */
         function drawOrganicBlob(context, blob, imageToDraw, currentBeatIntensity, currentPreBeat) {
             context.save();
-            context.translate(blob.x, blob.y);
-
-            // Morphing Logic: Independent X/Y Stretch
-            // This transforms the blob from a circle into shifting ellipses
-            blob.stretchPhase += blob.stretchSpeed;
-            const stretchX = 1 + Math.sin(blob.stretchPhase) * 0.25; 
-            const stretchY = 1 + Math.cos(blob.stretchPhase * 0.8) * 0.25;
-            context.scale(stretchX, stretchY);
-
-            // Beat Response
-            const combinedIntensity = (currentPreBeat * 0.2) + currentBeatIntensity;
-            const beatScale = 1 + combinedIntensity * 0.1;
-            context.scale(beatScale, beatScale);
             
-            context.rotate(blob.rotation + (combinedIntensity * 0.1));
+            // Compound Intensity: Subtle swell (pre-beat) + Sharp kick (beat)
+            const combinedIntensity = (currentPreBeat * 0.3) + currentBeatIntensity;
 
-            // Generate Path using Circular Noise
+            // 1. Calculate an effective scale for the blob
+            const effectiveScale = 1 + combinedIntensity * 0.06; 
+            // 2. Calculate an effective rotation
+            const effectiveRotation = blob.rotation + combinedIntensity * 0.08; 
+
+            context.translate(blob.x, blob.y);
+            context.rotate(effectiveRotation); // Use the animated rotation
+            
             context.beginPath();
-            const points = 20; 
-            const noiseTime = blob.time * 0.003;
-            // High magnitude for drastic shape changes
-            const distortionMagnitude = 0.4; 
-
-            for (let i = 0; i <= points; i++) {
+            const points = 24; // Slightly more points for smoother liquid edges
+            
+            // Liquid Viscosity: Modulate the "stretchiness" over time
+            const viscosity = 1.2 + Math.sin(blob.time * 0.05) * 0.4;
+            const noiseSpeed = 0.006;
+            
+            for (let i = 0; i < points; i++) {
                 const angle = (i / points) * Math.PI * 2;
-                // Circular noise sampling: mapping angle to unit circle in noise space
-                const nx = Math.cos(angle) + 10; // offset to avoid 0
-                const ny = Math.sin(angle) + 10;
+                const nx = Math.cos(angle);
+                const ny = Math.sin(angle);
                 
-                // Sample 3D noise (x, y, time) -> smooth seamless loop
-                const nVal = noise(nx, ny, noiseTime);
+                // Sample noise in 3D (X, Y, Time) for organic liquid evolution
+                const noiseVal = noise((nx + 1) * viscosity, (ny + 1) * viscosity, blob.time * noiseSpeed);
                 
-                const r = blob.radius * (1 + (nVal * distortionMagnitude));
-                const x = Math.cos(angle) * r;
-                const y = Math.sin(angle) * r;
+                // Calculate dynamic radius with a "surface tension" floor
+                const radius = blob.radius * effectiveScale * (0.8 + noiseVal * 0.5);
 
-                if (i === 0) context.moveTo(x, y);
-                else context.lineTo(x, y);
+                const pointX = nx * radius;
+                const pointY = ny * radius;
+                if (i === 0) context.moveTo(pointX, pointY);
+                else context.lineTo(pointX, pointY);
             }
             context.closePath();
             context.clip();
-
-            // Liquid Interior Distortion (The "Strip" Effect)
-            // Enhanced to be smoother and continuous as requested
-            const numStrips = isMobile ? 15 : 25; // Lower count, thicker strips for performance
-            const totalWidth = blob.radius * 2.8; // Draw slightly larger to cover wobbles
-            const stripWidth = totalWidth / numStrips;
-            const startX = -totalWidth / 2;
             
-            // Warping parameters
-            const warpAmp = blob.baseWarp * (1 + Math.sin(blob.time * 0.02) * 0.5);
-            const flowOffset = blob.time * 0.05;
-
+            // Refined Liquid Slicing: Vertical strips with organic horizontal drift
+            const totalWarp = blob.baseWarp + Math.sin(blob.time * 0.08) * (blob.baseWarp * 0.6);
+            const numStrips = isMobile ? 20 : 30; // Adaptive strip count for performance
+            const stripWidth = (blob.radius * 2.5 * effectiveScale) / numStrips;
+            
             for (let i = 0; i < numStrips; i++) {
-                const destX = startX + i * stripWidth;
+                const stripX = -blob.radius * effectiveScale + i * stripWidth;
+                const sinInput = (i / numStrips) * Math.PI + (blob.time * 0.12);
+                const yOffset = Math.sin(sinInput) * totalWarp;
                 
-                // Sine wave distortion for liquid feel
-                const stripProgress = i / numStrips;
-                const warpY = Math.sin(stripProgress * Math.PI * 2 + flowOffset) * warpAmp;
-                
-                const srcX = blob.sourceX + (blob.sourceSize * stripProgress);
+                const srcX = blob.sourceX + (blob.sourceSize / numStrips) * i;
                 const srcW = blob.sourceSize / numStrips;
-                const destY = -blob.radius * 1.5 + warpY; // Tall enough to cover
-                const destH = blob.radius * 3;
+                const destY = -blob.radius * effectiveScale + yOffset;
+                const destH = blob.radius * 2 * effectiveScale;
 
-                // Draw Image Strip
-                context.drawImage(imageToDraw, srcX, blob.sourceY, srcW, blob.sourceSize, destX, destY, stripWidth + 1, destH);
+                context.drawImage(imageToDraw, srcX, blob.sourceY, srcW, blob.sourceSize, stripX, destY, stripWidth + 1, destH);
 
-                // High Contrast Pass
-                if (blob.contrastBoost && currentBeatIntensity > 0.15) {
+                // Performant Contrast Boost: Double-draw with overlay mode on beat
+                if (blob.contrastBoost && currentBeatIntensity > 0.1) {
                     context.save();
                     context.globalCompositeOperation = 'overlay';
-                    context.globalAlpha = currentBeatIntensity * 0.5;
-                    context.drawImage(imageToDraw, srcX, blob.sourceY, srcW, blob.sourceSize, destX, destY, stripWidth + 1, destH);
+                    context.globalAlpha = currentBeatIntensity * 0.4;
+                    context.drawImage(imageToDraw, srcX, blob.sourceY, srcW, blob.sourceSize, stripX, destY, stripWidth + 1, destH);
                     context.restore();
                 }
             }
@@ -5423,13 +5400,25 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                     transitionProgress = 1; isTransitioning = false; oldResizedArt = new Image();
                 }
             }
-            // Fill background with extracted dominant color to prevent bleed
-            ctx.fillStyle = baseColor;
-            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-            // Draw Blobs
-            // Note: We don't draw the rotating background anymore.
-            // The blobs provide the entire visual field.
+            const drawRotatingBackground = (image) => {
+                const scale = 1.5; // Draw larger to prevent corners from appearing during rotation
+                ctx.save();
+                ctx.translate(canvasWidth / 2, canvasHeight / 2);
+                ctx.rotate(backgroundRotation);
+                ctx.drawImage(image, 
+                    -canvasWidth * scale / 2, -canvasHeight * scale / 2, 
+                    canvasWidth * scale, canvasHeight * scale
+                );
+                ctx.restore();
+            };
+            if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
+                ctx.globalAlpha = 1 - transitionProgress;
+                drawRotatingBackground(oldResizedArt);
+            }
+            if (currentResizedArt.complete && currentResizedArt.src) {
+                ctx.globalAlpha = isTransitioning ? transitionProgress : 1;
+                drawRotatingBackground(currentResizedArt);
+            }
             ctx.globalAlpha = 1;
             
             // --- Update and Draw Blobs ---
