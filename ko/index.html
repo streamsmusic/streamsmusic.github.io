@@ -5263,25 +5263,22 @@ function findSongByString(artistTitleString, additionalSongs = []) {
          * Takes the fully rendered scene (BG + Blobs) and applies a final
          * heavy Simplex Noise displacement pass to the whole image.
          */
-        function applyWholeScreenDistortion(targetCtx, sourceCanvas, time) {
+        function applyWholeScreenDistortion(targetCtx, sourceCanvas, time, beatIntensity) {
             const w = targetCtx.canvas.width;
             const h = targetCtx.canvas.height;
             
-            // Get raw pixels of the composed scene
-            // We read from the sourceCanvas which contains BG + Blobs
             const srcData = sourceCanvas.getContext('2d').getImageData(0, 0, w, h);
             const src = srcData.data;
-            
-            // We write to a new buffer
             const destImageData = targetCtx.createImageData(w, h);
             const dest = destImageData.data;
 
-            const t = time * 0.0002; // Very slow global churn
-            const scale = 0.02; // Noise frequency
-            const amp = 30; // Distortion distance in pixels
+            const t = time * 0.0002; 
+            const scale = 0.02; 
+            
+            // Beat Detection Visibility:
+            // Increase distortion amplitude on beat
+            const amp = 30 + (beatIntensity * 15); 
 
-            // Optimization: stride for pixel iteration? 
-            // Since resolution is already low (0.25), we iterate all pixels.
             for (let y = 0; y < h; y++) {
                 for (let x = 0; x < w; x++) {
                     const nX = noise(x * scale, y * scale, t);
@@ -5290,7 +5287,6 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                     const shiftX = (nX - 0.5) * amp;
                     const shiftY = (nY - 0.5) * amp;
 
-                    // Sample with clamping
                     let sx = Math.floor(x + shiftX);
                     let sy = Math.floor(y + shiftY);
                     
@@ -5326,29 +5322,34 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             
             // Beat reaction + Pre-beat swell
             const intensity = currentBeatIntensity + (currentPreBeat * 0.2);
-            const scale = (1 + intensity * 0.15) * blob.stretchX;
-            const scaleY = (1 + intensity * 0.1) * blob.stretchY;
+            
+            // Fallbacks for legacy blobs (prevent invisible blob bug)
+            const radX = blob.radiusX || blob.radius || 50;
+            const radY = blob.radiusY || blob.radius || 50;
+            const stretchX = blob.stretchX || 1;
+            const stretchY = blob.stretchY || 1;
+
+            const scale = (1 + intensity * 0.15) * stretchX;
+            const scaleY = (1 + intensity * 0.1) * stretchY;
 
             context.translate(blob.x, blob.y);
             context.rotate(blob.rotation + (intensity * 0.1));
             
             context.beginPath();
             
-            // Organic Shape Generation
-            // Use distinct noise lookups for X and Y to create non-circular, amoeba shapes
             const points = [];
-            const numPoints = 12; // Fewer points, smoothed with curves
+            const numPoints = 12; 
             
             for (let i = 0; i <= numPoints; i++) {
                 const angle = (i / numPoints) * Math.PI * 2;
                 
-                // Aggressive noise displacement for "calculated" removal
+                // Aggressive noise displacement
                 const noiseX = noise(Math.cos(angle) + 10, Math.sin(angle) + 10, time);
                 const noiseY = noise(Math.cos(angle) + 20, Math.sin(angle) + 20, time);
                 
-                // Varying radius for X and Y separately to allow complex curves
-                const rX = blob.radiusX * (0.7 + noiseX * 0.8); 
-                const rY = blob.radiusY * (0.7 + noiseY * 0.8);
+                // Use X/Y radius separately
+                const rX = radX * (0.7 + noiseX * 0.8); 
+                const rY = radY * (0.7 + noiseY * 0.8);
                 
                 points.push({
                     x: Math.cos(angle) * rX * scale,
@@ -5356,7 +5357,6 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 });
             }
 
-            // Draw smooth curve through points
             context.moveTo(points[0].x, points[0].y);
             for (let i = 0; i < points.length - 1; i++) {
                 const midX = (points[i].x + points[i + 1].x) / 2;
@@ -5366,18 +5366,16 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             context.closePath();
             context.clip();
 
-            // Simplex Noise Texture Warping (High Intensity)
-            const noiseT = time * 0.0008; // Slower time for heavier look
-            const nX = noise(blob.x * 0.02, blob.y * 0.02, noiseT);
-            const nY = noise(blob.x * 0.02 + 50, blob.y * 0.02 + 50, noiseT);
+            // Internal Texture Distortion
+            const noiseT = time * 0.5; 
+            const nX = noise(blob.x * 0.01, blob.y * 0.01, noiseT);
+            const nY = noise(blob.x * 0.01 + 50, blob.y * 0.01 + 50, noiseT);
             
-            // Extreme internal distortion
             const warpX = (nX - 0.5) * blob.sourceSize * 1.5;
             const warpY = (nY - 0.5) * blob.sourceSize * 1.5;
             const warpZoom = 1.2 + (intensity * 0.4) + (nX * 0.3);
 
-            // Use larger bounding box to accommodate the stretch
-            const drawW = Math.max(blob.radiusX, blob.radiusY) * 6;
+            const drawW = Math.max(radX, radY) * 6;
             const drawH = drawW;
             
             const sx = Math.max(0, Math.min(imageToDraw.width - blob.sourceSize, blob.sourceX + warpX));
@@ -5441,36 +5439,61 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 sceneCtx = sceneCanvas.getContext('2d', { willReadFrequently: true });
             }
 
-            // 1. Draw Clean Background to Buffer
+            // 1. Draw Clean Backgrounds (Blended)
             sceneCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+            
+            // Draw Old BG (Fading Out)
+            if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
+                sceneCtx.save();
+                sceneCtx.globalAlpha = 1 - transitionProgress;
+                sceneCtx.drawImage(oldResizedArt, 0, 0, canvasWidth, canvasHeight);
+                sceneCtx.restore();
+            }
+            
+            // Draw New BG (Fading In)
             if (currentResizedArt.complete && currentResizedArt.src) {
-                // Draw resized image covering the whole buffer
+                sceneCtx.save();
+                sceneCtx.globalAlpha = isTransitioning ? transitionProgress : 1;
                 sceneCtx.drawImage(currentResizedArt, 0, 0, canvasWidth, canvasHeight);
+                sceneCtx.restore();
             }
 
-            // 2. Draw Blobs to Buffer (On top of BG)
+            // 2. Draw Blobs (Blended)
             blobs.forEach(blob => {
-                // Physics
+                // Physics & Wrap Logic
                 blob.x += blob.vx;
                 blob.y += blob.vy;
                 blob.rotation += blob.rotationSpeed;
                 
-                // Wrap logic
-                const maxR = Math.max(blob.radiusX, blob.radiusY) * 2;
+                // Wrap
+                const radX = blob.radiusX || blob.radius || 50;
+                const radY = blob.radiusY || blob.radius || 50;
+                const maxR = Math.max(radX, radY) * 2;
+                
                 if (blob.x - maxR > canvasWidth) blob.x = -maxR;
                 else if (blob.x + maxR < 0) blob.x = canvasWidth + maxR;
                 if (blob.y - maxR > canvasHeight) blob.y = -maxR;
                 else if (blob.y + maxR < 0) blob.y = canvasHeight + maxR;
 
-                // Draw to Scene Context
+                // Draw Old Blobs
+                if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
+                    sceneCtx.save();
+                    sceneCtx.globalAlpha = 1 - transitionProgress;
+                    drawOrganicBlob(sceneCtx, blob, oldResizedArt, beatIntensity, preBeatIntensity);
+                    sceneCtx.restore();
+                }
+
+                // Draw New Blobs
                 if (currentResizedArt.complete && currentResizedArt.src) {
+                    sceneCtx.save();
+                    sceneCtx.globalAlpha = isTransitioning ? transitionProgress : 1;
                     drawOrganicBlob(sceneCtx, blob, currentResizedArt, beatIntensity, preBeatIntensity);
+                    sceneCtx.restore();
                 }
             });
 
-            // 3. Apply Global Distortion to Screen
-            // Takes the buffer (BG + Blobs) and warps it all together
-            applyWholeScreenDistortion(ctx, sceneCanvas, time);
+            // 3. Apply Global Distortion
+            applyWholeScreenDistortion(ctx, sceneCanvas, time, beatIntensity);
 
             // 3. If a beat was active, restore the canvas from the global distortion.
             if (beatIntensity > 0.001) {
