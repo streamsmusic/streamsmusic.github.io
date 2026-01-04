@@ -5181,7 +5181,7 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 }
 
                 const smallImageUrl = getLowResArtUrl(imageUrl);
-                const newResized = await createResizedImage(smallImageUrl, 64);
+                const newResized = await createResizedImage(smallImageUrl, 256);
                 newResized.dataset.originalUrl = imageUrl;
                 currentResizedArt = newResized;
 
@@ -5232,8 +5232,8 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 const radiusX = (Math.random() * radiusVariance + minRadiusMultiplier) * baseSize * (0.5 + Math.random());
                 const radiusY = (Math.random() * radiusVariance + minRadiusMultiplier) * baseSize * (0.5 + Math.random());
 
-                // Much smaller source window = more "zoomed in" texture = more apparent distortion
-                const sourceSize = Math.min(sectorW, sectorH) * 0.8; 
+                // Use a larger portion of the image to ensure texture variety (not just solid colors)
+                const sourceSize = Math.min(imgWidth, imgHeight) * (0.3 + Math.random() * 0.3);
                 
                 blobs.push({
                     x: Math.random() * canvasWidth,
@@ -5439,28 +5439,30 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                 sceneCtx = sceneCanvas.getContext('2d', { willReadFrequently: true });
             }
 
-            // 1. Draw Clean Backgrounds (Blended & Rotating)
-            sceneCtx.clearRect(0, 0, canvasWidth, canvasHeight);
-            
-            const drawRotatedBG = (img, alpha) => {
+            // Update Global Rotation
+            backgroundRotation += 0.002;
+
+            // Helper: Draw Rotated & Scaled Background
+            const drawBG = (img, alpha) => {
                 sceneCtx.save();
                 sceneCtx.globalAlpha = alpha;
                 sceneCtx.translate(canvasWidth / 2, canvasHeight / 2);
                 sceneCtx.rotate(backgroundRotation);
-                // Draw large enough to cover corners during rotation
-                const scale = 1.5;
-                sceneCtx.drawImage(img, -canvasWidth * scale / 2, -canvasHeight * scale / 2, canvasWidth * scale, canvasHeight * scale);
+                // Scale up 1.5x to ensure corners are covered during rotation
+                const s = 1.5;
+                sceneCtx.drawImage(img, -canvasWidth * s / 2, -canvasHeight * s / 2, canvasWidth * s, canvasHeight * s);
                 sceneCtx.restore();
             };
 
-            // Draw Old BG
+            // 1. Draw Clean Backgrounds (Blended)
+            sceneCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+            
             if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
-                drawRotatedBG(oldResizedArt, 1 - transitionProgress);
+                drawBG(oldResizedArt, 1 - transitionProgress);
             }
             
-            // Draw New BG
             if (currentResizedArt.complete && currentResizedArt.src) {
-                drawRotatedBG(currentResizedArt, isTransitioning ? transitionProgress : 1);
+                drawBG(currentResizedArt, isTransitioning ? transitionProgress : 1);
             }
 
             // 2. Draw Blobs (Blended)
