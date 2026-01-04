@@ -5239,18 +5239,18 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                     x: Math.random() * canvasWidth,
                     y: Math.random() * canvasHeight,
                     // Slower, drifting movement
-                    vx: (Math.random() - 0.5) * maxSpeed * 1.5,
-                    vy: (Math.random() - 0.5) * maxSpeed * 1.5,
+                    vx: (Math.random() - 0.5) * maxSpeed * 0.3,
+                    vy: (Math.random() - 0.5) * maxSpeed * 0.3,
                     radiusX: radiusX,
                     radiusY: radiusY,
                     // Independent morph speeds
-                    morphSpeed: 0.001 + Math.random() * 0.004,
+                    morphSpeed: 0.001 + Math.random() * 0.002,
                     morphOffset: Math.random() * 100,
                     sourceX: (Math.random() * (imgWidth - sourceSize)),
                     sourceY: (Math.random() * (imgHeight - sourceSize)),
                     sourceSize: sourceSize,
                     rotation: Math.random() * Math.PI * 2,
-                    rotationSpeed: (Math.random() - 0.5) * 0.005,
+                    rotationSpeed: (Math.random() - 0.5) * 0.005, // Very slow rotation
                     contrastBoost: Math.random() > 0.5,
                 });
             }
