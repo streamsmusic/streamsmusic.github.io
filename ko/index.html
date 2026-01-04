@@ -5303,39 +5303,44 @@ function findSongByString(artistTitleString, additionalSongs = []) {
         function drawOrganicBlob(context, blob, imageToDraw, currentBeatIntensity, currentPreBeat) {
             context.save();
             
-            // Compound Intensity: Subtle swell (pre-beat) + Sharp kick (beat)
+            // Liquid "Sticking": Slightly brighten overlapping areas
+            context.globalCompositeOperation = 'screen';
+            
             const combinedIntensity = (currentPreBeat * 0.3) + currentBeatIntensity;
-
-            // 1. Calculate an effective scale for the blob
-            const effectiveScale = 1 + combinedIntensity * 0.06; 
-            // 2. Calculate an effective rotation
+            const effectiveScale = 1 + combinedIntensity * 0.1; // Increased pulse range
             const effectiveRotation = blob.rotation + combinedIntensity * 0.08; 
 
             context.translate(blob.x, blob.y);
-            context.rotate(effectiveRotation); // Use the animated rotation
+            context.rotate(effectiveRotation);
             
             context.beginPath();
-            const points = 24; // Slightly more points for smoother liquid edges
+            const points = 12; // Fewer points + deeper noise = more amoeba-like
             
-            // Liquid Viscosity: Modulate the "stretchiness" over time
-            const viscosity = 1.2 + Math.sin(blob.time * 0.05) * 0.4;
-            const noiseSpeed = 0.006;
+            const complexity = 0.8 + Math.sin(blob.time * 0.03) * 0.3;
+            const morphSpeed = 0.008;
             
             for (let i = 0; i < points; i++) {
                 const angle = (i / points) * Math.PI * 2;
                 const nx = Math.cos(angle);
                 const ny = Math.sin(angle);
                 
-                // Sample noise in 3D (X, Y, Time) for organic liquid evolution
-                const noiseVal = noise((nx + 1) * viscosity, (ny + 1) * viscosity, blob.time * noiseSpeed);
+                // Amoeba Morph: Use high-amplitude noise to break circularity
+                const morph = noise((nx + 1) * complexity, (ny + 1) * complexity, blob.time * morphSpeed);
                 
-                // Calculate dynamic radius with a "surface tension" floor
-                const radius = blob.radius * effectiveScale * (0.8 + noiseVal * 0.5);
+                // Deform radius aggressively: 40% to 140% of base size
+                const radius = blob.radius * effectiveScale * (0.4 + morph * 1.0);
 
                 const pointX = nx * radius;
                 const pointY = ny * radius;
                 if (i === 0) context.moveTo(pointX, pointY);
-                else context.lineTo(pointX, pointY);
+                else {
+                    // Use quadratic curves for more organic, rounded "sticky" edges
+                    const prevAngle = ((i - 1) / points) * Math.PI * 2;
+                    const midAngle = (angle + prevAngle) / 2;
+                    const midMorph = noise((Math.cos(midAngle)+1)*complexity, (Math.sin(midAngle)+1)*complexity, blob.time*morphSpeed);
+                    const midR = blob.radius * effectiveScale * (0.4 + midMorph * 1.0);
+                    context.quadraticCurveTo(Math.cos(prevAngle)*radius, Math.sin(prevAngle)*radius, pointX, pointY);
+                }
             }
             context.closePath();
             context.clip();
@@ -5376,8 +5381,15 @@ function findSongByString(artistTitleString, additionalSongs = []) {
          */
         function animateCanvas() {
             animationFrameId = requestAnimationFrame(animateCanvas);
-            if (!ctx || document.visibilityState !== 'visible') return; // Do not render if screen is off
+            if (!ctx || document.visibilityState !== 'visible') return; 
             
+            // Independent background distortion evolution
+            const turb = document.getElementById('turbulence');
+            if (turb) {
+                const baseFreq = 0.01 + Math.sin(Date.now() * 0.0005) * 0.005;
+                turb.setAttribute('baseFrequency', `${baseFreq} ${baseFreq * 2}`);
+            }
+
             const { width: canvasWidth, height: canvasHeight } = distortionCanvas;
             
             ctx.clearRect(0, 0, canvasWidth, canvasHeight);
