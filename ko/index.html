@@ -5366,25 +5366,19 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             context.closePath();
             context.clip();
 
-            // Internal Texture Distortion
-            const noiseT = time * 0.5; 
-            const nX = noise(blob.x * 0.01, blob.y * 0.01, noiseT);
-            const nY = noise(blob.x * 0.01 + 50, blob.y * 0.01 + 50, noiseT);
-            
-            const warpX = (nX - 0.5) * blob.sourceSize * 1.5;
-            const warpY = (nY - 0.5) * blob.sourceSize * 1.5;
-            const warpZoom = 1.2 + (intensity * 0.4) + (nX * 0.3);
+            // Internal Texture - Static & Fixed Scale
+            const warpZoom = 1.0 + (intensity * 0.1);
 
-            const drawW = Math.max(radX, radY) * 6;
-            const drawH = drawW;
+            // Calculate dimensions to cover the blob without excessive zooming
+            // radX/radY are the base radii. The blob distorts up to ~1.5x-1.8x.
+            // We use a factor of 3.0 to safely cover the max distortion.
+            const maxRad = Math.max(radX * stretchX, radY * stretchY);
+            const drawSize = maxRad * 3.0;
             
-            const sx = Math.max(0, Math.min(imageToDraw.width - blob.sourceSize, blob.sourceX + warpX));
-            const sy = Math.max(0, Math.min(imageToDraw.height - blob.sourceSize, blob.sourceY + warpY));
-
             context.drawImage(
                 imageToDraw, 
-                sx, sy, blob.sourceSize, blob.sourceSize,
-                -drawW/2, -drawH/2, drawW * warpZoom, drawH * warpZoom
+                blob.sourceX, blob.sourceY, blob.sourceSize, blob.sourceSize,
+                -drawSize/2, -drawSize/2, drawSize * warpZoom, drawSize * warpZoom
             );
 
             // Contrast Boost
