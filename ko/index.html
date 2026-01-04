@@ -5282,6 +5282,55 @@ function findSongByString(artistTitleString, additionalSongs = []) {
         }
 
         /**
+         * Draws the full background image with heavy, smooth grid-based distortion.
+         */
+        function drawDistortedBackground(context, img, time, alpha) {
+            if (alpha <= 0) return;
+            context.globalAlpha = alpha;
+
+            const cols = 12; // Grid resolution
+            const rows = 12; 
+            const cw = context.canvas.width;
+            const ch = context.canvas.height;
+            const cellW = Math.ceil(cw / cols);
+            const cellH = Math.ceil(ch / rows);
+            
+            const imgW = img.width;
+            const imgH = img.height;
+            const srcCellW = imgW / cols;
+            const srcCellH = imgH / rows;
+
+            // Slow down time for the background warp
+            const t = time * 0.0005;
+
+            for (let c = 0; c < cols; c++) {
+                for (let r = 0; r < rows; r++) {
+                    // 3D Noise for smooth continuous warping (x, y, time)
+                    // Offset inputs slightly to separate X and Y vectors
+                    const nX = noise(c * 0.1, r * 0.1, t);
+                    const nY = noise(c * 0.1 + 10, r * 0.1 + 10, t);
+                    
+                    // Map 0..1 to -1..1
+                    const vecX = (nX - 0.5) * 2;
+                    const vecY = (nY - 0.5) * 2;
+                    
+                    // "Heavily distorted": Shift source window by up to 1.5 grid cells
+                    const shiftX = vecX * srcCellW * 1.5;
+                    const shiftY = vecY * srcCellH * 1.5;
+
+                    // Calculate source coordinates with clamping to prevent edge flickering
+                    // (Though drawImage handles out-of-bounds gracefully mostly, clamping keeps color)
+                    const sx = Math.max(0, Math.min(imgW - srcCellW, (c * srcCellW) + shiftX));
+                    const sy = Math.max(0, Math.min(imgH - srcCellH, (r * srcCellH) + shiftY));
+
+                    // Draw cell with slight overlap (+1) to fix sub-pixel grid lines
+                    context.drawImage(img, sx, sy, srcCellW, srcCellH, c * cellW, r * cellH, cellW + 1, cellH + 1);
+                }
+            }
+            context.globalAlpha = 1;
+        }
+
+        /**
          * Draws a single blob, adding animations based on the global beat intensity.
          * Each blob will now pulse in size and get a rotational "kick" on the beat.
          * @param {CanvasRenderingContext2D} context - The canvas context to draw on.
@@ -5388,11 +5437,22 @@ function findSongByString(artistTitleString, additionalSongs = []) {
 
             // --- Background Rotation and Drawing (Unchanged) ---
             backgroundRotation += 0.002;
+            const time = performance.now();
+
             if (isTransitioning) {
                 transitionProgress += 1 / TRANSITION_DURATION;
                 if (transitionProgress >= 1) {
                     transitionProgress = 1; isTransitioning = false; oldResizedArt = new Image();
                 }
+            }
+
+            // --- Draw Distorted Backgrounds ---
+            // We draw this BEFORE the blobs so it sits behind them
+            if (isTransitioning && oldResizedArt.complete && oldResizedArt.src) {
+                drawDistortedBackground(ctx, oldResizedArt, time, 1 - transitionProgress);
+            }
+            if (currentResizedArt.complete && currentResizedArt.src) {
+                drawDistortedBackground(ctx, currentResizedArt, time, isTransitioning ? transitionProgress : 1);
             }
             
             // --- Update and Draw Blobs ---
