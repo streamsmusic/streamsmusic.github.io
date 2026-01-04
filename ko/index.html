@@ -5262,9 +5262,9 @@ function findSongByString(artistTitleString, additionalSongs = []) {
             const sectorH = imgHeight / rows;
 
             for (let i = 0; i < blobCount; i++) {
-                const radius = (Math.random() * radiusVariance + minRadiusMultiplier) * Math.min(canvasWidth, canvasHeight);
+                // Make blobs HUGE to cover screen and overlap (0.5 to 0.9 of screen size)
+                const radius = (Math.random() * 0.4 + 0.5) * Math.min(canvasWidth, canvasHeight);
 
-                // Select a unique area from the shuffled sectors
                 const sector = sectors[i % sectors.length];
                 const sourceSize = Math.min(sectorW, sectorH) * (Math.random() * 0.4 + 0.6);
                 const sourceX = (sector.c * sectorW) + Math.random() * (sectorW - sourceSize);
@@ -5282,12 +5282,14 @@ function findSongByString(artistTitleString, additionalSongs = []) {
                     sourceY: sourceY,
                     sourceSize: sourceSize,
                     time: Math.random() * 1000,
-                    warpAmount: 0,
-                    baseWarp: radius * 0.12,
+                    // Independent axis oscillation for morphing shapes
+                    phaseX: Math.random() * Math.PI * 2,
+                    phaseY: Math.random() * Math.PI * 2,
+                    speedX: Math.random() * 0.005 + 0.002,
+                    speedY: Math.random() * 0.005 + 0.002,
+                    baseWarp: radius * 0.5, // Stronger internal warp
                     viscosityOffset: Math.random() * Math.PI,
-                    // Designated blobs react with higher contrast
                     contrastBoost: Math.random() > 0.6,
-                    scale: 1,
                 });
             }
         }
@@ -5303,66 +5305,86 @@ function findSongByString(artistTitleString, additionalSongs = []) {
         function drawOrganicBlob(context, blob, imageToDraw, currentBeatIntensity, currentPreBeat) {
             context.save();
             
-            // Compound Intensity: Subtle swell (pre-beat) + Sharp kick (beat)
             const combinedIntensity = (currentPreBeat * 0.3) + currentBeatIntensity;
-
-            // 1. Calculate an effective scale for the blob
-            const effectiveScale = 1 + combinedIntensity * 0.06; 
-            // 2. Calculate an effective rotation
-            const effectiveRotation = blob.rotation + combinedIntensity * 0.08; 
+            
+            // Calculate dynamic aspect ratio (Morphing)
+            // Oscillate width and height independently to create non-circular shapes
+            const stretchX = 1 + Math.sin(blob.time * blob.speedX + blob.phaseX) * 0.3; 
+            const stretchY = 1 + Math.cos(blob.time * blob.speedY + blob.phaseY) * 0.3;
+            
+            // Beat impact expands the blob further
+            const beatScale = 1 + combinedIntensity * 0.15;
+            
+            const effectiveRotation = blob.rotation + combinedIntensity * 0.1;
 
             context.translate(blob.x, blob.y);
-            context.rotate(effectiveRotation); // Use the animated rotation
+            context.rotate(effectiveRotation);
+            // Apply morphing scale
+            context.scale(stretchX * beatScale, stretchY * beatScale);
             
             context.beginPath();
-            const points = 24; // Slightly more points for smoother liquid edges
+            const points = 24; 
             
-            // Liquid Viscosity: Modulate the "stretchiness" over time
-            const viscosity = 1.2 + Math.sin(blob.time * 0.05) * 0.4;
-            const noiseSpeed = 0.006;
+            // Increased viscosity fluctuation for sticking/dripping look
+            const viscosity = 1.0 + Math.sin(blob.time * 0.08 + blob.viscosityOffset) * 0.5;
+            const noiseSpeed = 0.008;
             
             for (let i = 0; i < points; i++) {
                 const angle = (i / points) * Math.PI * 2;
                 const nx = Math.cos(angle);
                 const ny = Math.sin(angle);
                 
-                // Sample noise in 3D (X, Y, Time) for organic liquid evolution
-                const noiseVal = noise((nx + 1) * viscosity, (ny + 1) * viscosity, blob.time * noiseSpeed);
+                // Aggressive noise for non-convex "amoeba" edges
+                const noiseVal = noise(
+                    (nx + 1) * viscosity, 
+                    (ny + 1) * viscosity, 
+                    blob.time * noiseSpeed
+                );
                 
-                // Calculate dynamic radius with a "surface tension" floor
-                const radius = blob.radius * effectiveScale * (0.8 + noiseVal * 0.5);
+                // Drastic radius variance
+                const r = blob.radius * (0.6 + noiseVal * 0.8); 
 
-                const pointX = nx * radius;
-                const pointY = ny * radius;
+                const pointX = nx * r;
+                const pointY = ny * r;
+                
+                // Curve smoothing could be added here, but linear to points with high blur looks organic enough
                 if (i === 0) context.moveTo(pointX, pointY);
                 else context.lineTo(pointX, pointY);
             }
             context.closePath();
             context.clip();
             
-            // Refined Liquid Slicing: Vertical strips with organic horizontal drift
-            const totalWarp = blob.baseWarp + Math.sin(blob.time * 0.08) * (blob.baseWarp * 0.6);
-            const numStrips = isMobile ? 20 : 30; // Adaptive strip count for performance
-            const stripWidth = (blob.radius * 2.5 * effectiveScale) / numStrips;
+            // Internal Texture Warping
+            // We increase warp amount significantly to distort the actual image content
+            const warpMagnitude = blob.baseWarp * (1.5 + Math.sin(blob.time * 0.1) * 0.5);
+            const numStrips = isMobile ? 15 : 25; // Lower count, wider strips for performance with large blobs
+            // Draw slightly larger than radius to cover bounds
+            const drawW = blob.radius * 2.5;
+            const stripWidth = drawW / numStrips;
+            const startX = -drawW / 2;
             
             for (let i = 0; i < numStrips; i++) {
-                const stripX = -blob.radius * effectiveScale + i * stripWidth;
-                const sinInput = (i / numStrips) * Math.PI + (blob.time * 0.12);
-                const yOffset = Math.sin(sinInput) * totalWarp;
+                const destX = startX + i * stripWidth;
                 
+                // Sine wave distortion for the strip
+                const phase = (i / numStrips) * Math.PI * 2 + blob.time * 0.2;
+                const yOffset = Math.sin(phase) * warpMagnitude;
+                
+                // Source image slicing
                 const srcX = blob.sourceX + (blob.sourceSize / numStrips) * i;
                 const srcW = blob.sourceSize / numStrips;
-                const destY = -blob.radius * effectiveScale + yOffset;
-                const destH = blob.radius * 2 * effectiveScale;
+                
+                // Draw strip vertically stretched
+                const destH = blob.radius * 3; // Tall enough to cover waviness
+                const destY = -destH / 2 + yOffset;
 
-                context.drawImage(imageToDraw, srcX, blob.sourceY, srcW, blob.sourceSize, stripX, destY, stripWidth + 1, destH);
+                context.drawImage(imageToDraw, srcX, blob.sourceY, srcW, blob.sourceSize, destX, destY, stripWidth + 1, destH);
 
-                // Performant Contrast Boost: Double-draw with overlay mode on beat
                 if (blob.contrastBoost && currentBeatIntensity > 0.1) {
                     context.save();
                     context.globalCompositeOperation = 'overlay';
-                    context.globalAlpha = currentBeatIntensity * 0.4;
-                    context.drawImage(imageToDraw, srcX, blob.sourceY, srcW, blob.sourceSize, stripX, destY, stripWidth + 1, destH);
+                    context.globalAlpha = currentBeatIntensity * 0.5;
+                    context.drawImage(imageToDraw, srcX, blob.sourceY, srcW, blob.sourceSize, destX, destY, stripWidth + 1, destH);
                     context.restore();
                 }
             }
